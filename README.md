@@ -1,16 +1,39 @@
-# React + Vite
+# Cold Mirror Client
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A standalone desktop overlay application for iRacing, designed specifically for use with OBS Window Capture.
 
-Currently, two official plugins are available:
+## Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Cold Mirror Client provides transparent, high-performance telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator or can be captured in OBS. 
 
-## React Compiler
+It runs as a fully independent Node.js/Electron application, directly reading iRacing shared memory via `irsdk-node` without requiring an external backend or database.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Architecture
 
-## Expanding the Oxlint configuration
+- **Main Process (Node.js)**: Runs a 30 FPS polling loop using `irsdk-node` to read telemetry data directly from the simulator's memory. Filters data to minimize IPC payload overhead.
+- **Renderer Process (React/Vite)**: Receives lightweight telemetry updates via IPC. Uses Zustand for reactive state management and TailwindCSS for styling.
+- **Communication**: Strict isolation via `contextBridge` in `preload.js`. The React application has no Node integration.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Development
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+This will launch both the Vite development server and the Electron application.
+
+## Building for Production
+
+To build the executable for distribution:
+
+```bash
+npm run build
+```
+
+This will output the compiled executables into the `dist` and `release` directories.
