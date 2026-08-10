@@ -7,20 +7,41 @@ export class TelemetryService {
     this.isRunning = false;
   }
 
-  start() {
+  async start() {
     if (this.isRunning) return;
     this.isRunning = true;
     
-    this.iracing.on('Telemetry', (data) => {
-      const payload = this.filterTelemetry(data);
-      this.ipcSender('telemetry-update', payload);
-    });
-
-    this.iracing.on('SessionInfo', (data) => {
-      this.ipcSender('session-info', data);
-    });
+    // Check if sim is running
+    const isRunning = await IRacingSDK.IsSimRunning();
+    if (!isRunning) {
+        console.warn("iRacing is not running.");
+    }
     
     this.iracing.startSDK();
+    
+    const TIMEOUT = Math.floor((1 / 30) * 1000); // ~30fps for UI
+
+    const loop = () => {
+        if (!this.isRunning) return;
+        
+        if (this.iracing.waitForData(TIMEOUT)) {
+            const session = this.iracing.getSessionData();
+            const telemetry = this.iracing.getTelemetry();
+            
+            if (session) {
+                this.ipcSender('session-info', { data: session });
+            }
+            if (telemetry) {
+                const payload = this.filterTelemetry(telemetry);
+                this.ipcSender('telemetry-update', payload);
+            }
+        }
+        
+        // Loop again
+        setTimeout(loop, 10);
+    };
+    
+    loop();
   }
 
   stop() {
@@ -29,7 +50,7 @@ export class TelemetryService {
   }
 
   filterTelemetry(data) {
-    const values = data?.values || {};
+    const values = data?.values || data || {};
     return {
       SessionTime: values.SessionTime,
       CarIdxPosition: values.CarIdxPosition,
