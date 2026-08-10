@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
-import { useLiveStore } from '../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
+import { useLiveStore } from '../../store/useLiveStore';
 import { Trophy, Shield } from 'lucide-react';
 
 // Helper to convert iRacing decimal color to hex

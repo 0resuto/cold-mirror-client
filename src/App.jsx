@@ -1,5 +1,5 @@
 import React from 'react';
-import { LiveStandings } from './components/LiveStandings';
+import { LiveStandings } from './widgets/Standings/LiveStandings';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 
 function App() {
