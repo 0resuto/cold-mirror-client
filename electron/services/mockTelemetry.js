@@ -78,6 +78,11 @@ export class MockTelemetryService {
           const windDir = (this.sessionTime * 0.05) % (Math.PI * 2); // Rotating wind for testing
           const yaw = (this.sessionTime * 0.3) % (Math.PI * 2); // Simulate car turning around the track
 
+          const isPlayerOnPit = (this.sessionTime % 15) < 7.5; // On pit road 50% of the time for testing
+          // Simulate some pit service flags (1+2+4+8 = 15 for 4 tires, +16 = 31 for fuel)
+          const pitSvFlags = 31;
+          const pitSvFuel = 25.5;
+
           const telemetry = {
             values: {
               SessionTime: this.sessionTime,
@@ -95,13 +100,15 @@ export class MockTelemetryService {
               Gear: gear,
               RPM: rpm,
               Speed: speed,
+              PitSvFlags: pitSvFlags,
+              PitSvFuel: pitSvFuel,
               // Added 7 cars total
               CarIdxPosition: [6, 3, 5, 2, 7, 4, 1],
               CarIdxClassPosition: [6, 3, 5, 2, 7, 4, 1],
               CarIdxLap: [9, 10, 11, 10, 8, 10, 10], 
               CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist, car4Dist, car5Dist, car6Dist],
               CarLeftRight: leftRight,
-              CarIdxOnPitRoad: [false, false, true, false, false, false, false], 
+              CarIdxOnPitRoad: [false, isPlayerOnPit, true, false, false, false, false], 
               CarIdxHasDamage: [true, false, false, false, true, false, false], 
               CarIdxIsFastestLap: [false, false, false, false, false, false, true], 
             }
@@ -159,6 +166,8 @@ export class MockTelemetryService {
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
       Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
       CarLeftRight: values.CarLeftRight || 0,
       grid
     };

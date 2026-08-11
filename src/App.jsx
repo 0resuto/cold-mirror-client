@@ -6,6 +6,7 @@ import { LiveInputs } from './widgets/Inputs/LiveInputs';
 import { LiveRadar } from './widgets/Radar/LiveRadar';
 import { LinearTrackMap } from './widgets/TrackMap/LinearTrackMap';
 import { LiveWeather } from './widgets/Weather/LiveWeather';
+import { PitHelper } from './widgets/PitHelper/PitHelper';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { Power, MousePointer2, Trophy } from 'lucide-react';
@@ -33,6 +34,7 @@ function Dashboard() {
     { id: 'radar', name: 'Proximity Radar', description: 'Visual indicator for cars in your blind spots.' },
     { id: 'trackmap', name: 'Live Track Map', description: 'Linear track map showing all cars.' },
     { id: 'weather', name: 'Weather', description: 'Air/track temp and wind direction.' },
+    { id: 'pit', name: 'Pit Helper', description: 'Pit speed limiter and service status.' },
   ];
   return (
     <div className="w-full h-screen bg-brand-bg text-brand-10 flex flex-col" style={{ WebkitAppRegion: 'drag' }}>
@@ -219,6 +221,10 @@ function App() {
       content = <LiveWeather />;
       title = 'Weather';
       hideHeader = true; // Minimal UI
+    } else if (overlayType === 'pit') {
+      content = <PitHelper />;
+      title = 'Pit Helper';
+      hideHeader = true;
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }

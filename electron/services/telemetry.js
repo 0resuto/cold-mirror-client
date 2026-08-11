@@ -103,6 +103,8 @@ export class TelemetryService {
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
       Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
       CarLeftRight: values.CarLeftRight || 0,
       grid
     };

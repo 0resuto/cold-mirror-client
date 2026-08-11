@@ -145,17 +145,19 @@ class WindowManager {
       "inputs": 300,
       "radar": 100,
       "trackmap": 400,
-      "weather": 420
+      "weather": 420,
+      "pit": 380
     };
     const minHeights = {
       "inputs": 120,
       "radar": 150,
       "trackmap": 80,
-      "weather": 60
+      "weather": 60,
+      "pit": 100
     };
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : 400),
-      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : 600),
+      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : overlayId === "pit" ? 420 : 400),
+      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : overlayId === "pit" ? 140 : 600),
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,
@@ -13361,6 +13363,9 @@ class MockTelemetryService {
       const windVel = 2.5 + Math.sin(this.sessionTime * 0.1) * 1;
       const windDir = this.sessionTime * 0.05 % (Math.PI * 2);
       const yaw = this.sessionTime * 0.3 % (Math.PI * 2);
+      const isPlayerOnPit = this.sessionTime % 15 < 7.5;
+      const pitSvFlags = 31;
+      const pitSvFuel = 25.5;
       const telemetry = {
         values: {
           SessionTime: this.sessionTime,
@@ -13378,13 +13383,15 @@ class MockTelemetryService {
           Gear: gear,
           RPM: rpm,
           Speed: speed,
+          PitSvFlags: pitSvFlags,
+          PitSvFuel: pitSvFuel,
           // Added 7 cars total
           CarIdxPosition: [6, 3, 5, 2, 7, 4, 1],
           CarIdxClassPosition: [6, 3, 5, 2, 7, 4, 1],
           CarIdxLap: [9, 10, 11, 10, 8, 10, 10],
           CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist, car4Dist, car5Dist, car6Dist],
           CarLeftRight: leftRight,
-          CarIdxOnPitRoad: [false, false, true, false, false, false, false],
+          CarIdxOnPitRoad: [false, isPlayerOnPit, true, false, false, false, false],
           CarIdxHasDamage: [true, false, false, false, true, false, false],
           CarIdxIsFastestLap: [false, false, false, false, false, false, true]
         }
@@ -13434,6 +13441,8 @@ class MockTelemetryService {
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
       Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
       CarLeftRight: values.CarLeftRight || 0,
       grid
     };
@@ -13525,6 +13534,8 @@ class TelemetryService {
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
       Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
       CarLeftRight: values.CarLeftRight || 0,
       grid
     };
