@@ -47,31 +47,46 @@ export class MockTelemetryService {
       const speed = gear * 30 + (throttle * 20); // roughly km/h
       const fuelLevel = Math.max(0, 50 - (this.sessionTime * 0.05));
 
-      const telemetry = {
-        values: {
-          SessionTime: this.sessionTime,
-          FuelLevel: fuelLevel,
-          FuelUsePerHour: 15.5,
-          SteeringWheelAngle: steering,
-          Throttle: throttle,
-          Brake: brake,
-          Clutch: 0,
-          Gear: gear,
-          RPM: rpm,
-          Speed: speed,
-          CarIdxPosition: [1, 3, 4, 2],
-          CarIdxClassPosition: [1, 3, 4, 2],
-          CarIdxEstTime: [100.1, 100.5, 102.0, 100.3],
-          CarIdxF2Time: [1.2, 5.5, 15.0, 2.3],
-          CarIdxLap: [10, 10, 10, 10],
-          CarIdxLapDistPct: [
-            Math.abs((this.sessionTime * 0.01) % 1),
-            Math.abs((this.sessionTime * 0.01 - 0.02) % 1),
-            Math.abs((this.sessionTime * 0.01 - 0.05) % 1),
-            Math.abs((this.sessionTime * 0.01 - 0.01) % 1),
-          ],
-        }
-      };
+          const playerDist = Math.abs((this.sessionTime * 0.010) % 1);
+          const car0Dist = Math.abs((this.sessionTime * 0.010 + Math.sin(this.sessionTime * 0.2) * 0.005) % 1);
+          const car2Dist = Math.abs((this.sessionTime * 0.010 + Math.cos(this.sessionTime * 0.15) * 0.008) % 1);
+          const car3Dist = Math.abs((this.sessionTime * 0.010 - (this.sessionTime * 0.002) % 0.02) % 1);
+          
+          let delta0 = car0Dist - playerDist;
+          if (delta0 > 0.5) delta0 -= 1; if (delta0 < -0.5) delta0 += 1;
+          
+          let delta2 = car2Dist - playerDist;
+          if (delta2 > 0.5) delta2 -= 1; if (delta2 < -0.5) delta2 += 1;
+
+          let delta3 = car3Dist - playerDist;
+          if (delta3 > 0.5) delta3 -= 1; if (delta3 < -0.5) delta3 += 1;
+          
+          let leftRight = 1; // Clear
+          if (Math.abs(delta0 * 4000) < 5) leftRight = 2; // Car 0 Left
+          else if (Math.abs(delta2 * 4000) < 5) leftRight = 3; // Car 2 Right
+          else if (Math.abs(delta3 * 4000) < 5) leftRight = 3; // Car 3 Right
+
+          const telemetry = {
+            values: {
+              SessionTime: this.sessionTime,
+              FuelLevel: fuelLevel,
+              FuelUsePerHour: 15.5,
+              SteeringWheelAngle: steering,
+              Throttle: throttle,
+              Brake: brake,
+              Clutch: 0,
+              Gear: gear,
+              RPM: rpm,
+              Speed: speed,
+              CarIdxPosition: [1, 3, 4, 2],
+              CarIdxClassPosition: [1, 3, 4, 2],
+              CarIdxEstTime: [100.1, 100.5, 102.0, 100.3],
+              CarIdxF2Time: [1.2, 5.5, 15.0, 2.3],
+              CarIdxLap: [10, 10, 10, 10],
+              CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist],
+              CarLeftRight: leftRight,
+            }
+          };
 
       const payload = this.filterTelemetry(telemetry);
       this.ipcSender('telemetry-update', payload);
@@ -117,6 +132,7 @@ export class MockTelemetryService {
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
       Speed: values.Speed || 0,
+      CarLeftRight: values.CarLeftRight || 0,
       grid
     };
   }

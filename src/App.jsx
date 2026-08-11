@@ -3,6 +3,7 @@ import { LiveStandings } from './widgets/Standings/LiveStandings';
 import { LiveRelative } from './widgets/Relative/LiveRelative';
 import { LiveFuel } from './widgets/Fuel/LiveFuel';
 import { LiveInputs } from './widgets/Inputs/LiveInputs';
+import { LiveRadar } from './widgets/Radar/LiveRadar';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { Power, MousePointer2, Trophy } from 'lucide-react';
@@ -27,6 +28,7 @@ function Dashboard() {
     { id: 'relative', name: 'Relative', description: 'Drivers immediately ahead and behind on track.' },
     { id: 'fuel', name: 'Fuel Calculator', description: 'Live fuel usage and remaining laps.' },
     { id: 'inputs', name: 'Input Trace', description: 'Steering wheel, pedals, gear and speed.' },
+    { id: 'radar', name: 'Proximity Radar', description: 'Visual indicator for cars in your blind spots.' },
   ];
 
   return (
@@ -205,6 +207,10 @@ function App() {
       content = <LiveInputs />;
       title = 'Input Trace';
       hideHeader = true; // LiveInputs renders without header for sleek look
+    } else if (overlayType === 'radar') {
+      content = <LiveRadar />;
+      title = 'Proximity Radar';
+      hideHeader = true; // Radar renders its own UI without standard header
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }

@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Cold Mirror Client</h1>
-  <p>A standalone desktop overlay application for iRacing, designed for OBS Window Capture.</p>
+  <p>A standalone desktop overlay application for iRacing.</p>
 
   <p>
     <img src="https://img.shields.io/badge/Electron-191970?logo=electron&logoColor=white" alt="Electron" />
@@ -14,7 +14,7 @@
 
 ## Overview
 
-Cold Mirror Client provides transparent, high-performance telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator or can be captured in OBS. 
+Cold Mirror Client provides transparent, high-performance telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator. 
 
 It runs as a fully independent application, reading iRacing shared memory via `irsdk-node` without requiring an external backend or database.
 
