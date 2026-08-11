@@ -1,19 +1,43 @@
 import { create } from 'zustand';
 
-export const useAppStore = create((set) => ({
-  selectedLap: null,
-  referenceLapId: null,
-  isSidebarOpen: true,
-  hoveredData: null,
-  isUserHovering: false,
+export const useAppStore = create((set, get) => ({
+  overlays: {},
+  settingsLoaded: false,
 
-  setSelectedLap: (lap) => set({ selectedLap: lap, hoveredData: null }),
-  setReferenceLapId: (id) => set({ referenceLapId: id }),
-  toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
-  setHoveredData: (data) => set({ hoveredData: data }),
-  setIsUserHovering: (isHovering) => set({ isUserHovering: isHovering }),
-  steeringMax: 450,
-  setSteeringMax: (val) => set({ steeringMax: val }),
+  // Initialize from electron store
+  initSettings: async () => {
+    if (!window.electronAPI) return;
+    const settings = await window.electronAPI.getSettings();
+    set({ overlays: settings.overlays || {}, settingsLoaded: true });
+
+    // Listen for changes from main process (e.g. window resize/move or toggles)
+    window.electronAPI.onSettingsUpdated((newSettings) => {
+      set({ overlays: newSettings.overlays || {} });
+    });
+  },
+
+  toggleOverlay: (id, state) => {
+    if (window.electronAPI) {
+      window.electronAPI.toggleOverlay(id, state);
+    }
+  },
+
+  updateOverlaySetting: (id, settingObj) => {
+    if (window.electronAPI) {
+      window.electronAPI.updateOverlaySetting(id, settingObj);
+    }
+    // Optimistic update
+    set((state) => ({
+      overlays: {
+        ...state.overlays,
+        [id]: {
+          ...(state.overlays[id] || {}),
+          ...settingObj
+        }
+      }
+    }));
+  },
+
   standingsColumns: {
     pos: true,
     driver: true,

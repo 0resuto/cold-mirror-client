@@ -1,56 +1,44 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { app, BrowserWindow } from 'electron';
+import { WindowManager } from './windowManager.js';
 import { TelemetryService } from './services/telemetry.js';
+import { Store } from './services/store.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+let windowManager;
 
-let mainWindow;
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    hasShadow: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
+app.whenReady().then(() => {
+  const store = new Store({
+    configName: 'user-preferences',
+    defaults: {
+      overlays: {
+        standings: { enabled: false, x: 100, y: 100, width: 400, height: 600, clickThrough: false },
+        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false },
+      }
+    }
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    // Remove openDevTools so it doesn't pop up for the user now, since it works.
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
+  windowManager = new WindowManager(store);
+  
+  // Create the main dashboard window
+  windowManager.createDashboard();
 
-  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.setIgnoreMouseEvents(ignore, options);
+  // Restore any active overlays
+  const overlays = store.get('overlays') || {};
+  Object.keys(overlays).forEach(id => {
+    if (overlays[id].enabled) {
+      windowManager.createOverlay(id, overlays[id]);
     }
   });
 
   const telemetry = new TelemetryService((channel, data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(channel, data);
+    if (windowManager) {
+      windowManager.broadcast(channel, data);
     }
   });
   telemetry.start();
-}
-
-app.whenReady().then(() => {
-  createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      windowManager.createDashboard();
     }
   });
 });

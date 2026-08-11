@@ -1,10 +1,12 @@
 import { IRacingSDK } from 'irsdk-node';
+import { MockTelemetryService } from './mockTelemetry.js';
 
 export class TelemetryService {
   constructor(ipcSender) {
     this.ipcSender = ipcSender;
     this.iracing = new IRacingSDK();
     this.isRunning = false;
+    this.mockService = null;
   }
 
   async start() {
@@ -15,6 +17,13 @@ export class TelemetryService {
     const isRunning = await IRacingSDK.IsSimRunning();
     if (!isRunning) {
         console.warn("iRacing is not running.");
+        // Fallback to mock in dev mode
+        if (process.env.VITE_DEV_SERVER_URL) {
+            console.log("Starting Mock Telemetry as fallback...");
+            this.mockService = new MockTelemetryService(this.ipcSender);
+            this.mockService.start();
+            return;
+        }
     }
     
     this.iracing.startSDK();
@@ -23,6 +32,7 @@ export class TelemetryService {
 
     const loop = () => {
         if (!this.isRunning) return;
+        if (this.mockService) return; // Mock is running
         
         if (this.iracing.waitForData(TIMEOUT)) {
             const session = this.iracing.getSessionData();
@@ -46,19 +56,37 @@ export class TelemetryService {
 
   stop() {
     this.isRunning = false;
-    this.iracing.stopSDK();
+    if (this.mockService) {
+      this.mockService.stop();
+      this.mockService = null;
+    } else {
+      this.iracing.stopSDK();
+    }
   }
 
   filterTelemetry(data) {
     const values = data?.values || data || {};
+    const grid = {};
+    
+    // Max cars is usually 64
+    for (let i = 0; i < 64; i++) {
+      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+        grid[i] = {
+          Position: values.CarIdxPosition[i],
+          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+        };
+      }
+    }
+
     return {
       SessionTime: values.SessionTime,
-      CarIdxPosition: values.CarIdxPosition,
-      CarIdxClassPosition: values.CarIdxClassPosition,
-      CarIdxEstTime: values.CarIdxEstTime,
-      CarIdxF2Time: values.CarIdxF2Time,
-      CarIdxLap: values.CarIdxLap,
-      CarIdxLapDistPct: values.CarIdxLapDistPct,
+      player_name: data?.sessionInfo?.data?.DriverInfo?.Drivers?.[data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
+      grid
     };
   }
 }

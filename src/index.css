@@ -27,15 +27,15 @@
 
   :root {
     color-scheme: dark;
-    background-color: var(--color-brand-bg);
   }
 
   html {
-    background-color: var(--color-brand-bg);
+    background-color: transparent;
   }
 
   body {
-    @apply font-sans bg-brand-bg text-brand-10 antialiased;
+    @apply font-sans text-brand-10 antialiased;
+    background-color: transparent;
     min-height: 100vh;
     width: 100vw;
     display: flex;

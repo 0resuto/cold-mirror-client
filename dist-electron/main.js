@@ -1,15 +1,173 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { app, BrowserWindow, ipcMain } from "electron";
+import { ipcMain, BrowserWindow, app } from "electron";
 import path from "path";
-import { fileURLToPath as fileURLToPath$1 } from "url";
+import { fileURLToPath } from "url";
 import { error, warn, log } from "node:console";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import require$$0 from "fs";
+import { fileURLToPath as fileURLToPath$1 } from "node:url";
+import fs from "fs";
 import require$$2 from "os";
 import http from "node:http";
+const __filename$1 = fileURLToPath(import.meta.url);
+const __dirname$1 = path.dirname(__filename$1);
+class WindowManager {
+  constructor(store) {
+    this.windows = /* @__PURE__ */ new Map();
+    this.store = store;
+    this.setupIpc();
+  }
+  setupIpc() {
+    ipcMain.on("set-ignore-mouse-events", (event, ignore, options) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win) {
+        win.setIgnoreMouseEvents(ignore, options);
+      }
+    });
+    ipcMain.on("window-action", (event, { windowId, action, payload }) => {
+      const win = this.windows.get(windowId);
+      if (!win) return;
+      switch (action) {
+        case "close":
+          if (windowId.startsWith("overlay-")) {
+            const id = windowId.replace("overlay-", "");
+            this.toggleOverlay(id, false);
+          } else {
+            win.close();
+          }
+          break;
+        case "minimize":
+          win.minimize();
+          break;
+        case "move":
+          win.setPosition(payload.x, payload.y);
+          break;
+        case "resize":
+          win.setSize(payload.width, payload.height);
+          if (windowId.startsWith("overlay-")) {
+            const id = windowId.replace("overlay-", "");
+            const overlays = this.store.get("overlays") || {};
+            if (overlays[id]) {
+              overlays[id].width = payload.width;
+              overlays[id].height = payload.height;
+              this.store.set("overlays", overlays);
+            }
+          }
+          break;
+      }
+    });
+    ipcMain.handle("get-settings", () => {
+      return this.store.getAll();
+    });
+    ipcMain.on("update-overlay-setting", (event, { id, settings }) => {
+      const overlays = this.store.get("overlays") || {};
+      overlays[id] = { ...overlays[id], ...settings };
+      this.store.set("overlays", overlays);
+      const win = this.windows.get(`overlay-${id}`);
+      if (win && settings.clickThrough !== void 0) {
+        win.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
+      }
+      this.broadcast("settings-updated", this.store.getAll());
+    });
+    ipcMain.on("toggle-overlay", (event, id, state) => {
+      this.toggleOverlay(id, state);
+    });
+  }
+  toggleOverlay(id, state) {
+    const overlays = this.store.get("overlays") || {};
+    if (!overlays[id]) overlays[id] = {};
+    const newState = state !== void 0 ? state : !overlays[id].enabled;
+    overlays[id].enabled = newState;
+    this.store.set("overlays", overlays);
+    if (newState) {
+      this.createOverlay(id, overlays[id]);
+    } else {
+      const win = this.windows.get(`overlay-${id}`);
+      if (win && !win.isDestroyed()) {
+        win.close();
+      }
+    }
+    this.broadcast("settings-updated", this.store.getAll());
+  }
+  createWindow(id, options = {}, queryParams = {}) {
+    if (this.windows.has(id)) {
+      this.windows.get(id).focus();
+      return this.windows.get(id);
+    }
+    const win = new BrowserWindow({
+      ...options,
+      webPreferences: {
+        preload: path.join(__dirname$1, "preload.mjs"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        ...options.webPreferences
+      }
+    });
+    const queryString = new URLSearchParams(queryParams).toString();
+    if (process.env.VITE_DEV_SERVER_URL) {
+      win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${queryString}`);
+    } else {
+      win.loadFile(path.join(__dirname$1, "../dist/index.html"), { query: queryParams });
+    }
+    win.on("resized", () => this.saveBounds(id, win));
+    win.on("moved", () => this.saveBounds(id, win));
+    win.on("closed", () => {
+      this.windows.delete(id);
+    });
+    this.windows.set(id, win);
+    return win;
+  }
+  saveBounds(id, win) {
+    if (!id.startsWith("overlay-")) return;
+    const overlayId = id.replace("overlay-", "");
+    const bounds = win.getBounds();
+    const overlays = this.store.get("overlays") || {};
+    if (overlays[overlayId]) {
+      overlays[overlayId].x = bounds.x;
+      overlays[overlayId].y = bounds.y;
+      overlays[overlayId].width = bounds.width;
+      overlays[overlayId].height = bounds.height;
+      this.store.set("overlays", overlays);
+    }
+  }
+  createDashboard() {
+    return this.createWindow("dashboard", {
+      width: 900,
+      height: 650,
+      frame: false,
+      transparent: true,
+      hasShadow: false
+    }, { window: "dashboard" });
+  }
+  createOverlay(overlayId, savedSettings = {}) {
+    const win = this.createWindow(`overlay-${overlayId}`, {
+      width: savedSettings.width || 400,
+      height: savedSettings.height || 600,
+      x: savedSettings.x,
+      y: savedSettings.y,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      skipTaskbar: true
+    }, { window: "overlay", type: overlayId, id: `overlay-${overlayId}` });
+    if (savedSettings.clickThrough) {
+      win.setIgnoreMouseEvents(true, { forward: true });
+    }
+    return win;
+  }
+  getAllWindows() {
+    return Array.from(this.windows.values());
+  }
+  broadcast(channel, data) {
+    this.windows.forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(channel, data);
+      }
+    });
+  }
+}
 function getDefaultExportFromCjs$1(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -22,7 +180,7 @@ var hasRequiredNodeGypBuild$1;
 function requireNodeGypBuild$1() {
   if (hasRequiredNodeGypBuild$1) return nodeGypBuild;
   hasRequiredNodeGypBuild$1 = 1;
-  var fs = require$$0;
+  var fs$1 = fs;
   var path$1 = path;
   var os = require$$2;
   var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : commonjsRequire;
@@ -83,7 +241,7 @@ function requireNodeGypBuild$1() {
   };
   function readdirSync(dir) {
     try {
-      return fs.readdirSync(dir);
+      return fs$1.readdirSync(dir);
     } catch (err) {
       return [];
     }
@@ -177,7 +335,7 @@ function requireNodeGypBuild$1() {
     return typeof window !== "undefined" && window.process && window.process.type === "renderer";
   }
   function isAlpine(platform2) {
-    return platform2 === "linux" && fs.existsSync("/etc/alpine-release");
+    return platform2 === "linux" && fs$1.existsSync("/etc/alpine-release");
   }
   load2.parseTags = parseTags;
   load2.matchTags = matchTags;
@@ -12581,7 +12739,7 @@ var require_telemetry = __commonJS({
     };
   }
 });
-var getDirname = () => dirname(fileURLToPath(import.meta.url));
+var getDirname = () => dirname(fileURLToPath$1(import.meta.url));
 var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   LogLevel2[LogLevel2["None"] = 0] = "None";
   LogLevel2[LogLevel2["Error"] = 1] = "Error";
@@ -13125,11 +13283,88 @@ var IRacingSDK = class _IRacingSDK {
     return this._sdk.broadcast(message, ...args);
   }
 };
+class MockTelemetryService {
+  constructor(ipcSender) {
+    this.ipcSender = ipcSender;
+    this.isRunning = false;
+    this.sessionTime = 0;
+  }
+  start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log("Mock Telemetry started");
+    const sessionData = {
+      data: {
+        DriverInfo: {
+          Drivers: [
+            { CarIdx: 0, UserName: "Mock Driver 1", CarNumber: "1", iRating: 2500, LicString: "A 3.50" },
+            { CarIdx: 1, UserName: "Mock Driver 2", CarNumber: "2", iRating: 2100, LicString: "B 2.10" },
+            { CarIdx: 2, UserName: "Mock Driver 3", CarNumber: "42", iRating: 1800, LicString: "C 3.99" },
+            { CarIdx: 3, UserName: "Mock Driver 4", CarNumber: "99", iRating: 3100, LicString: "A 4.99" }
+          ]
+        }
+      }
+    };
+    const loop = () => {
+      if (!this.isRunning) return;
+      this.sessionTime += 0.033;
+      this.tickCount = (this.tickCount || 0) + 1;
+      if (this.tickCount % 30 === 0) {
+        this.ipcSender("session-info", sessionData);
+      }
+      const telemetry = {
+        values: {
+          SessionTime: this.sessionTime,
+          CarIdxPosition: [1, 3, 4, 2],
+          CarIdxClassPosition: [1, 3, 4, 2],
+          CarIdxEstTime: [100.1, 100.5, 102, 100.3],
+          CarIdxF2Time: [1.2, 5.5, 15, 2.3],
+          CarIdxLap: [10, 10, 10, 10],
+          CarIdxLapDistPct: [
+            Math.abs(this.sessionTime * 0.01 % 1),
+            Math.abs((this.sessionTime * 0.01 - 0.02) % 1),
+            Math.abs((this.sessionTime * 0.01 - 0.05) % 1),
+            Math.abs((this.sessionTime * 0.01 - 0.01) % 1)
+          ]
+        }
+      };
+      const payload = this.filterTelemetry(telemetry);
+      this.ipcSender("telemetry-update", payload);
+      setTimeout(loop, 33);
+    };
+    loop();
+  }
+  stop() {
+    this.isRunning = false;
+  }
+  filterTelemetry(data) {
+    const values = (data == null ? void 0 : data.values) || data || {};
+    const grid = {};
+    for (let i = 0; i < 64; i++) {
+      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+        grid[i] = {
+          Position: values.CarIdxPosition[i],
+          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false
+        };
+      }
+    }
+    return {
+      SessionTime: values.SessionTime,
+      grid
+    };
+  }
+}
 class TelemetryService {
   constructor(ipcSender) {
     this.ipcSender = ipcSender;
     this.iracing = new IRacingSDK();
     this.isRunning = false;
+    this.mockService = null;
   }
   async start() {
     if (this.isRunning) return;
@@ -13137,11 +13372,18 @@ class TelemetryService {
     const isRunning = await IRacingSDK.IsSimRunning();
     if (!isRunning) {
       console.warn("iRacing is not running.");
+      if (process.env.VITE_DEV_SERVER_URL) {
+        console.log("Starting Mock Telemetry as fallback...");
+        this.mockService = new MockTelemetryService(this.ipcSender);
+        this.mockService.start();
+        return;
+      }
     }
     this.iracing.startSDK();
     const TIMEOUT = Math.floor(1 / 30 * 1e3);
     const loop = () => {
       if (!this.isRunning) return;
+      if (this.mockService) return;
       if (this.iracing.waitForData(TIMEOUT)) {
         const session = this.iracing.getSessionData();
         const telemetry = this.iracing.getTelemetry();
@@ -13159,61 +13401,93 @@ class TelemetryService {
   }
   stop() {
     this.isRunning = false;
-    this.iracing.stopSDK();
+    if (this.mockService) {
+      this.mockService.stop();
+      this.mockService = null;
+    } else {
+      this.iracing.stopSDK();
+    }
   }
   filterTelemetry(data) {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const values = (data == null ? void 0 : data.values) || data || {};
+    const grid = {};
+    for (let i = 0; i < 64; i++) {
+      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+        grid[i] = {
+          Position: values.CarIdxPosition[i],
+          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false
+        };
+      }
+    }
     return {
       SessionTime: values.SessionTime,
-      CarIdxPosition: values.CarIdxPosition,
-      CarIdxClassPosition: values.CarIdxClassPosition,
-      CarIdxEstTime: values.CarIdxEstTime,
-      CarIdxF2Time: values.CarIdxF2Time,
-      CarIdxLap: values.CarIdxLap,
-      CarIdxLapDistPct: values.CarIdxLapDistPct
+      player_name: ((_h = (_g = (_c = (_b = (_a = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _a.data) == null ? void 0 : _b.DriverInfo) == null ? void 0 : _c.Drivers) == null ? void 0 : _g[(_f = (_e = (_d = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _d.data) == null ? void 0 : _e.DriverInfo) == null ? void 0 : _f.DriverCarIdx]) == null ? void 0 : _h.UserName) || "",
+      grid
     };
   }
 }
-const __filename$1 = fileURLToPath$1(import.meta.url);
-const __dirname$1 = path.dirname(__filename$1);
-let mainWindow;
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    hasShadow: false,
-    webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs"),
-      nodeIntegration: false,
-      contextIsolation: true
+class Store {
+  constructor(opts) {
+    const userDataPath = app.getPath("userData");
+    this.path = path.join(userDataPath, opts.configName + ".json");
+    this.data = parseDataFile(this.path, opts.defaults);
+  }
+  get(key) {
+    return this.data[key];
+  }
+  set(key, val) {
+    this.data[key] = val;
+    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+  }
+  setAll(newVal) {
+    this.data = { ...this.data, ...newVal };
+    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+  }
+  getAll() {
+    return this.data;
+  }
+}
+function parseDataFile(filePath, defaults) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath));
+  } catch (error2) {
+    return defaults;
+  }
+}
+let windowManager;
+app.whenReady().then(() => {
+  const store = new Store({
+    configName: "user-preferences",
+    defaults: {
+      overlays: {
+        standings: { enabled: false, x: 100, y: 100, width: 400, height: 600, clickThrough: false },
+        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false }
+      }
     }
   });
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadFile(path.join(__dirname$1, "../dist/index.html"));
-  }
-  ipcMain.on("set-ignore-mouse-events", (event, ignore, options) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.setIgnoreMouseEvents(ignore, options);
+  windowManager = new WindowManager(store);
+  windowManager.createDashboard();
+  const overlays = store.get("overlays") || {};
+  Object.keys(overlays).forEach((id) => {
+    if (overlays[id].enabled) {
+      windowManager.createOverlay(id, overlays[id]);
     }
   });
   const telemetry = new TelemetryService((channel, data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(channel, data);
+    if (windowManager) {
+      windowManager.broadcast(channel, data);
     }
   });
   telemetry.start();
-}
-app.whenReady().then(() => {
-  createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      windowManager.createDashboard();
     }
   });
 });

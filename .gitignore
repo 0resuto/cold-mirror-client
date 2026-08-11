@@ -12,6 +12,7 @@ dist
 dist-ssr
 dist-electron
 release
+.agents/
 *.local
 
 # Editor directories and files
