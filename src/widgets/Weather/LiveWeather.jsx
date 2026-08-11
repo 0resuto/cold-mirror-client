@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 import { Thermometer, Wind, Navigation, Cloud } from 'lucide-react';
 
 export function LiveWeather() {
@@ -16,6 +17,8 @@ export function LiveWeather() {
       const latestData = state.liveLapData[state.liveLapData.length - 1];
       if (!latestData) return;
       
+      useAppStore.getState().setWidgetActive('weather', latestData.Speed > 1);
+
       setWeather({
         AirTemp: latestData.AirTemp || 0,
         TrackTemp: latestData.TrackTemp || 0,

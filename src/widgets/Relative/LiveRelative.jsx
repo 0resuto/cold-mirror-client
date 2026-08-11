@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 
 export function LiveRelative() {
   const [relativeDrivers, setRelativeDrivers] = useState([]);
@@ -17,6 +18,8 @@ export function LiveRelative() {
 
       const latestData = state.liveLapData[state.liveLapData.length - 1];
       const grid = latestData?.grid || {};
+
+      useAppStore.getState().setWidgetActive('relative', latestData?.Speed > 1);
 
       if (Object.keys(grid).length === 0 || state.sessionDrivers.length === 0 || state.driverCarIdx === null) return;
 

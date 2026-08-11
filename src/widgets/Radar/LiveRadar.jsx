@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 
-const RADAR_RANGE_METERS = 12.5; // Zoomed in to show cars within 12.5 meters ahead/behind
+const RADAR_RANGE_METERS = 30; // Zoomed in to show cars within 30 meters ahead/behind
 
 export function LiveRadar() {
   const [radarState, setRadarState] = useState({
@@ -64,6 +65,8 @@ export function LiveRadar() {
         carLeftRight: latestData.CarLeftRight || 0,
         nearbyCars
       });
+
+      useAppStore.getState().setWidgetActive('radar', nearbyCars.length > 0 || (latestData.CarLeftRight || 0) > 1);
     });
 
     return () => unsubscribe();

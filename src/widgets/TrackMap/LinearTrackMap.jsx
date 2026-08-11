@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 import { Wrench, Timer } from 'lucide-react';
 
 export function LinearTrackMap() {
@@ -18,6 +19,7 @@ export function LinearTrackMap() {
       const latestData = state.liveLapData[state.liveLapData.length - 1];
       if (!latestData) return;
       
+      useAppStore.getState().setWidgetActive('trackmap', latestData.Speed > 1);
       setGridData(latestData.grid || {});
       setPlayerIdx(latestData.playerCarIdx);
     });

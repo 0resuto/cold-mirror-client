@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 import { Gamepad2 } from 'lucide-react';
 
 const MAX_HISTORY = 90; // 3 seconds at 30Hz
@@ -28,6 +29,8 @@ export function LiveInputs() {
 
       const latestData = state.liveLapData[state.liveLapData.length - 1];
       if (!latestData) return;
+
+      useAppStore.getState().setWidgetActive('inputs', latestData.Speed > 1);
 
       const newInputs = {
         throttle: latestData.Throttle || 0,

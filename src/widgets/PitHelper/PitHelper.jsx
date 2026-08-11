@@ -53,7 +53,10 @@ export function PitHelper() {
     return () => unsubscribe();
   }, []);
 
-  const opacity = data.onPitRoad ? activeOpacity : inactiveOpacity;
+  useEffect(() => {
+    useAppStore.getState().setWidgetActive('pit', data.onPitRoad);
+  }, [data.onPitRoad]);
+
   const isSpeeding = data.onPitRoad && data.speed > data.limitKph;
 
   // Convert speeds for display
@@ -71,10 +74,7 @@ export function PitHelper() {
   const fastRepair = (data.pitSvFlags & 64) > 0;
 
   return (
-    <div 
-      className={`w-full h-full flex flex-col font-sans transition-all duration-300 overflow-hidden ${isSpeeding ? 'bg-red-600/90 shadow-[0_0_50px_rgba(220,38,38,0.8)]' : 'bg-transparent'}`} 
-      style={{ opacity }}
-    >
+    <div className={`w-full h-full flex flex-col font-sans overflow-hidden ${isSpeeding ? 'bg-red-600/90 shadow-[0_0_50px_rgba(220,38,38,0.8)]' : 'bg-transparent'}`}>
       {/* Speedometer Area */}
       <div className="flex-1 flex flex-col justify-center px-4 relative">
         <div className="flex justify-between items-end mb-2">

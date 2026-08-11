@@ -40,6 +40,13 @@ class WindowManager {
         case "minimize":
           win.minimize();
           break;
+        case "maximize":
+          if (win.isMaximized()) {
+            win.unmaximize();
+          } else {
+            win.maximize();
+          }
+          break;
         case "move":
           win.setPosition(payload.x, payload.y);
           break;
@@ -97,6 +104,7 @@ class WindowManager {
     }
     const win = new BrowserWindow({
       ...options,
+      icon: path.join(__dirname$1, "../app_icon.ico"),
       webPreferences: {
         preload: path.join(__dirname$1, "preload.mjs"),
         nodeIntegration: false,
@@ -112,6 +120,8 @@ class WindowManager {
     }
     win.on("resized", () => this.saveBounds(id, win));
     win.on("moved", () => this.saveBounds(id, win));
+    win.on("maximize", () => win.webContents.send("maximize-state", true));
+    win.on("unmaximize", () => win.webContents.send("maximize-state", false));
     win.on("closed", () => {
       this.windows.delete(id);
     });
@@ -146,18 +156,20 @@ class WindowManager {
       "radar": 100,
       "trackmap": 400,
       "weather": 420,
-      "pit": 380
+      "pit": 380,
+      "dash": 400
     };
     const minHeights = {
       "inputs": 120,
       "radar": 150,
       "trackmap": 80,
       "weather": 60,
-      "pit": 100
+      "pit": 100,
+      "dash": 200
     };
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : overlayId === "pit" ? 420 : 400),
-      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : overlayId === "pit" ? 140 : 600),
+      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : overlayId === "pit" ? 420 : overlayId === "dash" ? 600 : 400),
+      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : overlayId === "pit" ? 140 : overlayId === "dash" ? 300 : 600),
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,
@@ -13382,6 +13394,8 @@ class MockTelemetryService {
           Clutch: 0,
           Gear: gear,
           RPM: rpm,
+          ShiftIndicatorPct: (rpm - 3e3) / 4e3,
+          // mock: 3000 is 0, 7000 is 1.0
           Speed: speed,
           PitSvFlags: pitSvFlags,
           PitSvFuel: pitSvFuel,
@@ -13440,6 +13454,7 @@ class MockTelemetryService {
       Clutch: values.Clutch || 0,
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
       Speed: values.Speed || 0,
       PitSvFlags: values.PitSvFlags || 0,
       PitSvFuel: values.PitSvFuel || 0,
@@ -13533,6 +13548,7 @@ class TelemetryService {
       Clutch: values.Clutch || 0,
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
       Speed: values.Speed || 0,
       PitSvFlags: values.PitSvFlags || 0,
       PitSvFuel: values.PitSvFuel || 0,

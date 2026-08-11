@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Window management
   windowAction: (windowId, action, payload) => ipcRenderer.send('window-action', { windowId, action, payload }),
+  onMaximizeStateChange: (callback) => ipcRenderer.on('maximize-state', (_event, value) => callback(value)),
   
   // Settings & App State
   getSettings: () => ipcRenderer.invoke('get-settings'),

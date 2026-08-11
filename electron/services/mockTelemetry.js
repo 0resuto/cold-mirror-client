@@ -99,6 +99,7 @@ export class MockTelemetryService {
               Clutch: 0,
               Gear: gear,
               RPM: rpm,
+              ShiftIndicatorPct: (rpm - 3000) / 4000, // mock: 3000 is 0, 7000 is 1.0
               Speed: speed,
               PitSvFlags: pitSvFlags,
               PitSvFuel: pitSvFuel,
@@ -165,6 +166,7 @@ export class MockTelemetryService {
       Clutch: values.Clutch || 0,
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
       Speed: values.Speed || 0,
       PitSvFlags: values.PitSvFlags || 0,
       PitSvFuel: values.PitSvFuel || 0,

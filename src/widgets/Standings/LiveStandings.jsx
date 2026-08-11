@@ -49,6 +49,9 @@ export const LiveStandings = () => {
       lastUpdateTime = now;
 
       const latestData = state.liveLapData[state.liveLapData.length - 1];
+      if (!latestData) return;
+      
+      useAppStore.getState().setWidgetActive('standings', latestData.Speed > 1);
       const grid = latestData?.grid || {};
       const sessionDrivers = state.sessionDrivers || [];
       const playerName = latestData?.player_name || '';

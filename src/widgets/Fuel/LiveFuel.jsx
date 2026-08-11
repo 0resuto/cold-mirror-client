@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
+import { useAppStore } from '../../store/useAppStore';
 import { Fuel } from 'lucide-react';
 
 export function LiveFuel() {
@@ -16,6 +17,8 @@ export function LiveFuel() {
 
       const latestData = state.liveLapData[state.liveLapData.length - 1];
       if (!latestData) return;
+
+      useAppStore.getState().setWidgetActive('fuel', latestData.Speed > 1);
 
       // FuelUsePerHour is usually L/hr or kg/hr. iRacing uses Liters.
       const level = latestData.FuelLevel || 0;

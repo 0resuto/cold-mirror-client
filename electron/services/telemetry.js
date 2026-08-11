@@ -102,6 +102,7 @@ export class TelemetryService {
       Clutch: values.Clutch || 0,
       Gear: values.Gear || 0,
       RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
       Speed: values.Speed || 0,
       PitSvFlags: values.PitSvFlags || 0,
       PitSvFuel: values.PitSvFuel || 0,

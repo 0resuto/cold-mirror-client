@@ -19,6 +19,17 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
+  widgetActive: {},
+  setWidgetActive: (id, isActive) => set((state) => {
+    if (state.widgetActive[id] === isActive) return state;
+    return {
+      widgetActive: {
+        ...state.widgetActive,
+        [id]: isActive
+      }
+    };
+  }),
+
   toggleOverlay: (id, state) => {
     if (window.electronAPI) {
       window.electronAPI.toggleOverlay(id, state);
