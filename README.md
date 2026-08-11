@@ -1,20 +1,37 @@
-# Cold Mirror Client
+<div align="center">
+  <h1>Cold Mirror Client</h1>
+  <p>A standalone desktop overlay application for iRacing, designed for OBS Window Capture.</p>
 
-A standalone desktop overlay application for iRacing, designed specifically for use with OBS Window Capture.
+  <p>
+    <img src="https://img.shields.io/badge/Electron-191970?logo=electron&logoColor=white" alt="Electron" />
+    <img src="https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB" alt="React" />
+    <img src="https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white" alt="Vite" />
+    <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
+  </p>
+</div>
+
+---
 
 ## Overview
 
 Cold Mirror Client provides transparent, high-performance telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator or can be captured in OBS. 
 
-It runs as a fully independent Node.js/Electron application, directly reading iRacing shared memory via `irsdk-node` without requiring an external backend or database.
+It runs as a fully independent application, reading iRacing shared memory via `irsdk-node` without requiring an external backend or database.
 
 ## Architecture
 
-- **Main Process (Node.js)**: Runs a 30 FPS polling loop using `irsdk-node` to read telemetry data directly from the simulator's memory. Filters data to minimize IPC payload overhead.
-- **Renderer Process (React/Vite)**: Receives lightweight telemetry updates via IPC. Uses Zustand for reactive state management and TailwindCSS for styling.
-- **Communication**: Strict isolation via `contextBridge` in `preload.js`. The React application has no Node integration.
+- **Main Process**: Node.js polling loop reading telemetry directly from simulator memory. Filters data to minimize IPC overhead.
+- **Renderer Process**: React/Vite application receiving lightweight telemetry updates. Uses Zustand for state management and TailwindCSS for styling.
+- **Communication**: Strict isolation via `contextBridge`. No Node integration in the Renderer.
 
-## Development
+## Getting Started
+
+### Prerequisites
+
+- Node.js
+- iRacing (running to provide telemetry data)
+
+### Development
 
 1. Install dependencies:
    ```bash
@@ -25,15 +42,13 @@ It runs as a fully independent Node.js/Electron application, directly reading iR
    ```bash
    npm run dev
    ```
+   > Launches the Vite development server and the Electron application concurrently.
 
-This will launch both the Vite development server and the Electron application.
+## Build
 
-## Building for Production
-
-To build the executable for distribution:
+Compile executables for distribution:
 
 ```bash
 npm run build
 ```
-
-This will output the compiled executables into the `dist` and `release` directories.
+> Outputs are generated in the `dist` and `release` directories.
