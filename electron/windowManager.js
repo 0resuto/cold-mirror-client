@@ -163,9 +163,20 @@ export class WindowManager {
   }
 
   createOverlay(overlayId, savedSettings = {}) {
+    const minWidths = {
+      'inputs': 300,
+      'radar': 100,
+    };
+    const minHeights = {
+      'inputs': 120,
+      'radar': 150,
+    };
+
     const win = this.createWindow(`overlay-${overlayId}`, {
       width: savedSettings.width || 400,
       height: savedSettings.height || 600,
+      minWidth: minWidths[overlayId] || 150,
+      minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,
       y: savedSettings.y,
       frame: false,
