@@ -4,6 +4,7 @@ import { LiveRelative } from './widgets/Relative/LiveRelative';
 import { LiveFuel } from './widgets/Fuel/LiveFuel';
 import { LiveInputs } from './widgets/Inputs/LiveInputs';
 import { LiveRadar } from './widgets/Radar/LiveRadar';
+import { LinearTrackMap } from './widgets/TrackMap/LinearTrackMap';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { Power, MousePointer2, Trophy } from 'lucide-react';
@@ -29,8 +30,8 @@ function Dashboard() {
     { id: 'fuel', name: 'Fuel Calculator', description: 'Live fuel usage and remaining laps.' },
     { id: 'inputs', name: 'Input Trace', description: 'Steering wheel, pedals, gear and speed.' },
     { id: 'radar', name: 'Proximity Radar', description: 'Visual indicator for cars in your blind spots.' },
+    { id: 'trackmap', name: 'Live Track Map', description: 'Linear track map showing all cars.' },
   ];
-
   return (
     <div className="w-full h-screen bg-brand-bg text-brand-10 flex flex-col" style={{ WebkitAppRegion: 'drag' }}>
       <div className="flex justify-between items-center p-6 pb-2">
@@ -211,6 +212,10 @@ function App() {
       content = <LiveRadar />;
       title = 'Proximity Radar';
       hideHeader = true; // Radar renders its own UI without standard header
+    } else if (overlayType === 'trackmap') {
+      content = <LinearTrackMap />;
+      title = 'Live Track Map';
+      hideHeader = true; // Linear map has its own minimal UI
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }

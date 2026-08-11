@@ -79,6 +79,8 @@ export class TelemetryService {
           LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
           TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
           OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false,
         };
       }
     }
@@ -86,6 +88,7 @@ export class TelemetryService {
     return {
       SessionTime: values.SessionTime,
       player_name: data?.sessionInfo?.data?.DriverInfo?.Drivers?.[data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
+      playerCarIdx: data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,

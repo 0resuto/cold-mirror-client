@@ -143,15 +143,17 @@ class WindowManager {
   createOverlay(overlayId, savedSettings = {}) {
     const minWidths = {
       "inputs": 300,
-      "radar": 100
+      "radar": 100,
+      "trackmap": 400
     };
     const minHeights = {
       "inputs": 120,
-      "radar": 150
+      "radar": 150,
+      "trackmap": 80
     };
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || 400,
-      height: savedSettings.height || 600,
+      width: savedSettings.width || (overlayId === "trackmap" ? 800 : 400),
+      height: savedSettings.height || (overlayId === "trackmap" ? 80 : 600),
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,
@@ -13311,10 +13313,13 @@ class MockTelemetryService {
         DriverInfo: {
           DriverCarIdx: 1,
           Drivers: [
-            { CarIdx: 0, UserName: "Mock Driver 1", CarNumber: "1", iRating: 2500, LicString: "A 3.50", CarClassColor: 16711680 },
-            { CarIdx: 1, UserName: "Mock Driver 2 (Player)", CarNumber: "2", iRating: 2100, LicString: "B 2.10", CarClassColor: 65280 },
-            { CarIdx: 2, UserName: "Mock Driver 3", CarNumber: "42", iRating: 1800, LicString: "C 3.99", CarClassColor: 65280 },
-            { CarIdx: 3, UserName: "Mock Driver 4", CarNumber: "99", iRating: 3100, LicString: "A 4.99", CarClassColor: 16711680 }
+            { CarIdx: 0, UserName: "Radar Tester 1", CarNumber: "1", iRating: 2500, LicString: "A 3.50", CarClassColor: 16711680 },
+            { CarIdx: 1, UserName: "Player", CarNumber: "2", iRating: 2100, LicString: "B 2.10", CarClassColor: 65280 },
+            { CarIdx: 2, UserName: "Radar Tester 2", CarNumber: "42", iRating: 1800, LicString: "C 3.99", CarClassColor: 65280 },
+            { CarIdx: 3, UserName: "Fast Guy", CarNumber: "99", iRating: 3100, LicString: "A 4.99", CarClassColor: 16711680 },
+            { CarIdx: 4, UserName: "Lapped Car", CarNumber: "7", iRating: 1200, LicString: "D 2.50", CarClassColor: 255 },
+            { CarIdx: 5, UserName: "Rival", CarNumber: "33", iRating: 2150, LicString: "B 3.00", CarClassColor: 65280 },
+            { CarIdx: 6, UserName: "Leader", CarNumber: "10", iRating: 4e3, LicString: "A 4.00", CarClassColor: 16711680 }
           ]
         }
       }
@@ -13334,22 +13339,21 @@ class MockTelemetryService {
       const speed = gear * 30 + throttle * 20;
       const fuelLevel = Math.max(0, 50 - this.sessionTime * 0.05);
       const playerDist = Math.abs(this.sessionTime * 0.01 % 1);
-      const car0Dist = Math.abs((this.sessionTime * 0.01 + Math.sin(this.sessionTime * 0.2) * 5e-3) % 1);
-      const car2Dist = Math.abs((this.sessionTime * 0.01 + Math.cos(this.sessionTime * 0.15) * 8e-3) % 1);
-      const car3Dist = Math.abs((this.sessionTime * 0.01 - this.sessionTime * 2e-3 % 0.02) % 1);
+      const car0Dist = Math.abs((playerDist + Math.sin(this.sessionTime * 0.2) * 5e-3) % 1);
+      const car2Dist = Math.abs((playerDist + Math.cos(this.sessionTime * 0.15) * 8e-3) % 1);
+      const car3Dist = (playerDist + 0.15) % 1;
+      const car4Dist = (playerDist + 0.5) % 1;
+      const car5Dist = (playerDist + 0.85) % 1;
+      const car6Dist = (playerDist + 0.05) % 1;
       let delta0 = car0Dist - playerDist;
       if (delta0 > 0.5) delta0 -= 1;
       if (delta0 < -0.5) delta0 += 1;
       let delta2 = car2Dist - playerDist;
       if (delta2 > 0.5) delta2 -= 1;
       if (delta2 < -0.5) delta2 += 1;
-      let delta3 = car3Dist - playerDist;
-      if (delta3 > 0.5) delta3 -= 1;
-      if (delta3 < -0.5) delta3 += 1;
       let leftRight = 1;
       if (Math.abs(delta0 * 4e3) < 5) leftRight = 2;
       else if (Math.abs(delta2 * 4e3) < 5) leftRight = 3;
-      else if (Math.abs(delta3 * 4e3) < 5) leftRight = 3;
       const telemetry = {
         values: {
           SessionTime: this.sessionTime,
@@ -13362,13 +13366,15 @@ class MockTelemetryService {
           Gear: gear,
           RPM: rpm,
           Speed: speed,
-          CarIdxPosition: [1, 3, 4, 2],
-          CarIdxClassPosition: [1, 3, 4, 2],
-          CarIdxEstTime: [100.1, 100.5, 102, 100.3],
-          CarIdxF2Time: [1.2, 5.5, 15, 2.3],
-          CarIdxLap: [10, 10, 10, 10],
-          CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist],
-          CarLeftRight: leftRight
+          // Added 7 cars total
+          CarIdxPosition: [6, 3, 5, 2, 7, 4, 1],
+          CarIdxClassPosition: [6, 3, 5, 2, 7, 4, 1],
+          CarIdxLap: [9, 10, 11, 10, 8, 10, 10],
+          CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist, car4Dist, car5Dist, car6Dist],
+          CarLeftRight: leftRight,
+          CarIdxOnPitRoad: [false, false, true, false, false, false, false],
+          CarIdxHasDamage: [true, false, false, false, true, false, false],
+          CarIdxIsFastestLap: [false, false, false, false, false, false, true]
         }
       };
       const payload = this.filterTelemetry(telemetry);
@@ -13392,13 +13398,16 @@ class MockTelemetryService {
           Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
           LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
           TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
-          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false
         };
       }
     }
     return {
       SessionTime: values.SessionTime,
       player_name: "Mock Driver 2 (Player)",
+      playerCarIdx: 1,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,
@@ -13463,7 +13472,7 @@ class TelemetryService {
     }
   }
   filterTelemetry(data) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const values = (data == null ? void 0 : data.values) || data || {};
     const grid = {};
     for (let i = 0; i < 64; i++) {
@@ -13475,13 +13484,16 @@ class TelemetryService {
           Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
           LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
           TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
-          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false
         };
       }
     }
     return {
       SessionTime: values.SessionTime,
       player_name: ((_h = (_g = (_c = (_b = (_a = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _a.data) == null ? void 0 : _b.DriverInfo) == null ? void 0 : _c.Drivers) == null ? void 0 : _g[(_f = (_e = (_d = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _d.data) == null ? void 0 : _e.DriverInfo) == null ? void 0 : _f.DriverCarIdx]) == null ? void 0 : _h.UserName) || "",
+      playerCarIdx: (_k = (_j = (_i = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _i.data) == null ? void 0 : _j.DriverInfo) == null ? void 0 : _k.DriverCarIdx,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,
