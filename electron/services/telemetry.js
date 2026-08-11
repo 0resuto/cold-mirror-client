@@ -77,6 +77,8 @@ export class TelemetryService {
           LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
           Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
           LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
+          F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
           TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
           OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
           HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,

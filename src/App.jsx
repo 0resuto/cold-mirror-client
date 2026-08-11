@@ -43,6 +43,9 @@ function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetting }) {
     </div>
   );
 
+  const defaultStandingsColumns = { pos: true, num: true, driver: true, carName: false, carClass: true, classPos: true, srating: true, irating: true, gap: true, bestLap: false, lastLap: true, trackPct: false, laps: false };
+  const standingsColLabels = { pos: 'POS', num: '#', driver: 'Driver', carName: 'Car', carClass: 'Class', classPos: 'C.POS', srating: 'SR', irating: 'iRating', gap: 'Gap', bestLap: 'Best Lap', lastLap: 'Last Lap', trackPct: 'Track %', laps: 'Laps' };
+
   return (
     <div className="bg-brand-60/10 border border-brand-60/30 rounded-xl flex flex-col transition-colors hover:border-brand-60/50 overflow-hidden">
       {/* Header (Always Visible) */}
@@ -106,6 +109,29 @@ function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetting }) {
           {renderSlider('Scale', 'scale', scale, 0.5, 2.0)}
           {renderSlider('Active Opacity', 'activeOpacity', activeOpacity, 0.0, 1.0)}
           {renderSlider('Inactive Opacity', 'inactiveOpacity', inactiveOpacity, 0.0, 1.0)}
+          
+          {config.id === 'standings' && (
+            <div className="flex flex-col gap-2 border-t border-brand-60/20 pt-3 mt-1">
+              <span className="text-[10px] whitespace-nowrap font-bold text-brand-10/60 uppercase">Visible Columns:</span>
+              <div className="flex flex-wrap gap-2">
+                {Object.keys(defaultStandingsColumns).map(col => {
+                  const isActive = state.columns ? state.columns[col] : defaultStandingsColumns[col];
+                  return (
+                    <button 
+                      key={col}
+                      onClick={() => {
+                        const currentCols = state.columns || defaultStandingsColumns;
+                        updateOverlaySetting(config.id, { columns: { ...currentCols, [col]: !isActive } });
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-semibold transition-all border ${isActive ? 'bg-brand-30/10 text-brand-30 border-brand-30/30' : 'bg-brand-60/10 text-brand-10/40 border-brand-60/20 hover:bg-brand-60/30 hover:text-brand-10/80'}`}
+                    >
+                      {standingsColLabels[col] || col}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -121,11 +147,10 @@ function Dashboard() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    initSettings();
     if (window.electronAPI?.onMaximizeStateChange) {
       window.electronAPI.onMaximizeStateChange(setIsMaximized);
     }
-  }, [initSettings]);
+  }, []);
 
   if (!settingsLoaded) {
     return <div className="w-full h-screen bg-brand-bg flex items-center justify-center text-brand-10">Loading...</div>;
@@ -241,10 +266,10 @@ function ResizeHandle({ windowId }) {
   );
 }
 
-function OverlayContainer({ title, windowId, hideHeader = false, raw = false, children }) {
+function OverlayContainer({ windowId, children }) {
   const overlayId = windowId.replace('overlay-', '');
   const settings = useAppStore(state => state.overlays[overlayId]) || {};
-  const isActive = useAppStore(state => state.widgetActive[overlayId]) ?? true; // default true if widget doesn't report
+  const isActive = useAppStore(state => state.widgetActive[overlayId]) ?? true;
 
   const isPitOrRadar = overlayId === 'pit' || overlayId === 'radar';
   const defaultInactive = isPitOrRadar ? 0.0 : 0.5;
@@ -254,44 +279,14 @@ function OverlayContainer({ title, windowId, hideHeader = false, raw = false, ch
   const inactiveOpacity = settings.inactiveOpacity ?? defaultInactive;
 
   const currentOpacity = isActive ? activeOpacity : inactiveOpacity;
-  const containerStyle = { WebkitAppRegion: 'drag', opacity: currentOpacity, transition: 'opacity 0.5s ease-in-out' };
-
-  if (raw) {
-    return (
-      <div className="w-full h-screen overflow-hidden relative bg-black" style={containerStyle}>
-        <div className="w-full h-full relative flex flex-col" style={{ zoom: scale }}>
-          {children}
-        </div>
-        <ResizeHandle windowId={windowId} />
-      </div>
-    );
-  }
-
+  
   return (
     <div 
       className="w-full h-screen overflow-hidden relative" 
-      style={containerStyle}
+      style={{ WebkitAppRegion: 'drag', opacity: currentOpacity, transition: 'opacity 0.5s ease-in-out' }}
     >
-      <div className="w-full h-full relative" style={{ zoom: scale }}>
-        <div className={`glass border border-brand-60/60 rounded-xl overflow-hidden h-full flex flex-col relative`}>
-          {!hideHeader && (
-            <div className="bg-brand-bg/80 px-4 py-2 border-b border-brand-60/60 flex justify-between items-center select-none" style={{ WebkitAppRegion: 'drag' }}>
-              <span className="font-bold text-sm tracking-wide text-brand-30">{title}</span>
-              <div className="flex gap-2">
-                <button 
-                  className="text-brand-10 hover:text-white transition-colors"
-                  onClick={() => window.electronAPI.windowAction(windowId, 'close')}
-                  style={{ WebkitAppRegion: 'no-drag' }}
-                >
-                  <Power size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="flex-1 relative overflow-hidden">
-            {children}
-          </div>
-        </div>
+      <div className="w-full h-full relative flex flex-col items-center justify-center" style={{ zoom: scale }}>
+        {children}
       </div>
       <ResizeHandle windowId={windowId} />
     </div>
@@ -304,8 +299,14 @@ function App() {
   const overlayType = urlParams.get('type');
   const windowId = urlParams.get('id');
 
+  const initSettings = useAppStore(state => state.initSettings);
+
   // Initialize telemetry IPC connection
   useLiveTelemetryIPC();
+
+  useEffect(() => {
+    initSettings();
+  }, [initSettings]);
 
   if (windowType === 'overlay') {
     let content = null;

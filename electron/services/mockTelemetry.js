@@ -112,6 +112,9 @@ export class MockTelemetryService {
               CarIdxOnPitRoad: [false, isPlayerOnPit, true, false, false, false, false], 
               CarIdxHasDamage: [true, false, false, false, true, false, false], 
               CarIdxIsFastestLap: [false, false, false, false, false, false, true], 
+              CarIdxBestLapTime: [75.2, 72.1, 74.5, 71.8, 80.0, 73.0, 71.5],
+              CarIdxLastLapTime: [76.1, 72.3, 75.0, 72.0, 81.2, 73.5, 71.8],
+              CarIdxF2Time: [12.5, 0.0, 4.2, -1.5, 45.0, 2.1, -15.0],
             }
           };
 
@@ -141,6 +144,8 @@ export class MockTelemetryService {
           LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
           Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
           LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
+          F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
           TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
           OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
           HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
@@ -151,7 +156,7 @@ export class MockTelemetryService {
 
     return {
       SessionTime: values.SessionTime,
-      player_name: "Mock Driver 2 (Player)",
+      player_name: "Player",
       playerCarIdx: 1,
       AirTemp: values.AirTemp || 0,
       TrackTemp: values.TrackTemp || 0,

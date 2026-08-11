@@ -9,6 +9,7 @@
     "build": "vite build && electron-builder"
   },
   "dependencies": {
+    "framer-motion": "^13.1.0",
     "irsdk-node": "^4.4.0",
     "lucide-react": "^0.300.0",
     "react": "^18.2.0",

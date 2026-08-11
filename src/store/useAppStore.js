@@ -52,20 +52,4 @@ export const useAppStore = create((set, get) => ({
     }));
   },
 
-  standingsColumns: {
-    pos: true,
-    driver: true,
-    carName: false,
-    carClass: true,
-    srating: true,
-    irating: true,
-    lastLap: false,
-    trackPct: true,
-  },
-  toggleStandingsColumn: (col) => set((state) => ({
-    standingsColumns: {
-      ...state.standingsColumns,
-      [col]: !state.standingsColumns[col]
-    }
-  })),
 }));
