@@ -81,7 +81,7 @@ export function LiveRadar() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center relative bg-brand-bg/60 rounded-xl border border-brand-60/30 overflow-hidden p-2 glass shadow-2xl">
+    <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden p-2">
       
       {/* Track Background Line */}
       <div className="absolute top-0 bottom-0 w-20 bg-brand-60/10 rounded-full"></div>

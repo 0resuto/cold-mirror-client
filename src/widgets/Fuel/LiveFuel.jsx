@@ -36,8 +36,8 @@ export function LiveFuel() {
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full font-sans bg-brand-bg/60 rounded-lg overflow-hidden border border-brand-60/40 shadow-2xl glass">
-      <div className="px-3 py-2 bg-brand-60/40 border-b border-brand-60/50 flex items-center gap-2">
+    <div className="flex flex-col h-full w-full font-sans overflow-hidden">
+      <div className="bg-brand-60/10 px-4 py-2 border-b border-brand-60/30 flex items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
         <Fuel size={14} className="text-brand-30" />
         <span className="text-xs font-black text-brand-10/90 uppercase tracking-widest">Fuel Calc</span>
       </div>

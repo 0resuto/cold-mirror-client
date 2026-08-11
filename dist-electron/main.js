@@ -144,16 +144,18 @@ class WindowManager {
     const minWidths = {
       "inputs": 300,
       "radar": 100,
-      "trackmap": 400
+      "trackmap": 400,
+      "weather": 420
     };
     const minHeights = {
       "inputs": 120,
       "radar": 150,
-      "trackmap": 80
+      "trackmap": 80,
+      "weather": 60
     };
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || (overlayId === "trackmap" ? 800 : 400),
-      height: savedSettings.height || (overlayId === "trackmap" ? 80 : 600),
+      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : 400),
+      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : 600),
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,
@@ -13354,9 +13356,19 @@ class MockTelemetryService {
       let leftRight = 1;
       if (Math.abs(delta0 * 4e3) < 5) leftRight = 2;
       else if (Math.abs(delta2 * 4e3) < 5) leftRight = 3;
+      const airTemp = 22.5 + Math.sin(this.sessionTime * 0.05) * 0.5;
+      const trackTemp = 35.2 + Math.cos(this.sessionTime * 0.02) * 1.5;
+      const windVel = 2.5 + Math.sin(this.sessionTime * 0.1) * 1;
+      const windDir = this.sessionTime * 0.05 % (Math.PI * 2);
+      const yaw = this.sessionTime * 0.3 % (Math.PI * 2);
       const telemetry = {
         values: {
           SessionTime: this.sessionTime,
+          AirTemp: airTemp,
+          TrackTemp: trackTemp,
+          WindVel: Math.max(0, windVel),
+          WindDir: windDir,
+          Yaw: yaw,
           FuelLevel: fuelLevel,
           FuelUsePerHour: 15.5,
           SteeringWheelAngle: steering,
@@ -13408,6 +13420,11 @@ class MockTelemetryService {
       SessionTime: values.SessionTime,
       player_name: "Mock Driver 2 (Player)",
       playerCarIdx: 1,
+      AirTemp: values.AirTemp || 0,
+      TrackTemp: values.TrackTemp || 0,
+      WindVel: values.WindVel || 0,
+      WindDir: values.WindDir || 0,
+      Yaw: values.Yaw || 0,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,
@@ -13494,6 +13511,11 @@ class TelemetryService {
       SessionTime: values.SessionTime,
       player_name: ((_h = (_g = (_c = (_b = (_a = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _a.data) == null ? void 0 : _b.DriverInfo) == null ? void 0 : _c.Drivers) == null ? void 0 : _g[(_f = (_e = (_d = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _d.data) == null ? void 0 : _e.DriverInfo) == null ? void 0 : _f.DriverCarIdx]) == null ? void 0 : _h.UserName) || "",
       playerCarIdx: (_k = (_j = (_i = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _i.data) == null ? void 0 : _j.DriverInfo) == null ? void 0 : _k.DriverCarIdx,
+      AirTemp: values.AirTemp || 0,
+      TrackTemp: values.TrackTemp || 0,
+      WindVel: values.WindVel || 0,
+      WindDir: values.WindDir || 0,
+      Yaw: values.Yaw || 0,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,

@@ -85,7 +85,7 @@ export function LiveInputs() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full font-sans bg-brand-bg/60 rounded-lg overflow-hidden border border-brand-60/40 shadow-2xl glass">
+    <div className="flex flex-col h-full w-full font-sans overflow-hidden">
       <style>{`
         .adaptive-col { flex-direction: column; }
         @media (max-height: 160px) {

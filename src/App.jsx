@@ -5,6 +5,7 @@ import { LiveFuel } from './widgets/Fuel/LiveFuel';
 import { LiveInputs } from './widgets/Inputs/LiveInputs';
 import { LiveRadar } from './widgets/Radar/LiveRadar';
 import { LinearTrackMap } from './widgets/TrackMap/LinearTrackMap';
+import { LiveWeather } from './widgets/Weather/LiveWeather';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { Power, MousePointer2, Trophy } from 'lucide-react';
@@ -31,6 +32,7 @@ function Dashboard() {
     { id: 'inputs', name: 'Input Trace', description: 'Steering wheel, pedals, gear and speed.' },
     { id: 'radar', name: 'Proximity Radar', description: 'Visual indicator for cars in your blind spots.' },
     { id: 'trackmap', name: 'Live Track Map', description: 'Linear track map showing all cars.' },
+    { id: 'weather', name: 'Weather', description: 'Air/track temp and wind direction.' },
   ];
   return (
     <div className="w-full h-screen bg-brand-bg text-brand-10 flex flex-col" style={{ WebkitAppRegion: 'drag' }}>
@@ -150,14 +152,11 @@ function ResizeHandle({ windowId }) {
 function OverlayContainer({ title, windowId, hideHeader = false, children }) {
   return (
     <div 
-      className="w-full h-screen overflow-hidden p-3 relative" 
+      className="w-full h-screen overflow-hidden relative" 
       style={{ WebkitAppRegion: 'drag' }}
     >
-      <div 
-        className="w-full h-full relative" 
-        style={{ WebkitAppRegion: 'no-drag' }}
-      >
-        <div className={`glass border border-brand-60/60 rounded-xl overflow-hidden shadow-2xl h-full flex flex-col relative`}>
+      <div className="w-full h-full relative">
+        <div className={`glass border border-brand-60/60 rounded-xl overflow-hidden h-full flex flex-col relative`}>
           {!hideHeader && (
             <div className="bg-brand-bg/80 px-4 py-2 border-b border-brand-60/60 flex justify-between items-center select-none" style={{ WebkitAppRegion: 'drag' }}>
               <span className="text-[10px] font-bold text-brand-10/60 uppercase tracking-widest">{title}</span>
@@ -216,6 +215,10 @@ function App() {
       content = <LinearTrackMap />;
       title = 'Live Track Map';
       hideHeader = true; // Linear map has its own minimal UI
+    } else if (overlayType === 'weather') {
+      content = <LiveWeather />;
+      title = 'Weather';
+      hideHeader = true; // Minimal UI
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }

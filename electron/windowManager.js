@@ -167,16 +167,18 @@ export class WindowManager {
       'inputs': 300,
       'radar': 100,
       'trackmap': 400,
+      'weather': 420,
     };
     const minHeights = {
       'inputs': 120,
       'radar': 150,
       'trackmap': 80,
+      'weather': 60,
     };
 
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || (overlayId === 'trackmap' ? 800 : 400),
-      height: savedSettings.height || (overlayId === 'trackmap' ? 80 : 600),
+      width: savedSettings.width || (overlayId === 'trackmap' ? 800 : overlayId === 'weather' ? 420 : 400),
+      height: savedSettings.height || (overlayId === 'trackmap' ? 80 : overlayId === 'weather' ? 80 : 600),
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
       x: savedSettings.x,

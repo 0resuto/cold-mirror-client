@@ -29,7 +29,7 @@ export function LinearTrackMap() {
   const playerLap = playerCar?.Lap || 0;
 
   return (
-    <div className="w-full h-full flex flex-col justify-center bg-brand-bg/60 rounded-lg border border-brand-60/40 p-4 shadow-2xl glass">
+    <div className="w-full h-full flex flex-col justify-center px-4">
       
       {/* The main track line */}
       <div className="relative w-full h-2 bg-brand-60/30 rounded-full my-auto shadow-inner border border-black/20">

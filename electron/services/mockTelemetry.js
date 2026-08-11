@@ -72,9 +72,20 @@ export class MockTelemetryService {
           if (Math.abs(delta0 * 4000) < 5) leftRight = 2; // Car 0 Left
           else if (Math.abs(delta2 * 4000) < 5) leftRight = 3; // Car 2 Right
 
+          const airTemp = 22.5 + Math.sin(this.sessionTime * 0.05) * 0.5;
+          const trackTemp = 35.2 + Math.cos(this.sessionTime * 0.02) * 1.5;
+          const windVel = 2.5 + Math.sin(this.sessionTime * 0.1) * 1.0;
+          const windDir = (this.sessionTime * 0.05) % (Math.PI * 2); // Rotating wind for testing
+          const yaw = (this.sessionTime * 0.3) % (Math.PI * 2); // Simulate car turning around the track
+
           const telemetry = {
             values: {
               SessionTime: this.sessionTime,
+              AirTemp: airTemp,
+              TrackTemp: trackTemp,
+              WindVel: Math.max(0, windVel),
+              WindDir: windDir,
+              Yaw: yaw,
               FuelLevel: fuelLevel,
               FuelUsePerHour: 15.5,
               SteeringWheelAngle: steering,
@@ -134,6 +145,11 @@ export class MockTelemetryService {
       SessionTime: values.SessionTime,
       player_name: "Mock Driver 2 (Player)",
       playerCarIdx: 1,
+      AirTemp: values.AirTemp || 0,
+      TrackTemp: values.TrackTemp || 0,
+      WindVel: values.WindVel || 0,
+      WindDir: values.WindDir || 0,
+      Yaw: values.Yaw || 0,
       FuelLevel: values.FuelLevel || 0,
       FuelUsePerHour: values.FuelUsePerHour || 0,
       SteeringWheelAngle: values.SteeringWheelAngle || 0,
