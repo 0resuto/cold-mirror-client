@@ -32,6 +32,9 @@ export function useLiveTelemetryIPC(enabled = true) {
     });
 
     return () => {
+      if (window.electronAPI.removeTelemetryListeners) {
+        window.electronAPI.removeTelemetryListeners();
+      }
     };
   }, [enabled, setLiveLapData, setSessionDrivers]);
 

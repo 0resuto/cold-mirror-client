@@ -11,6 +11,9 @@ export const useAppStore = create((set, get) => ({
     set({ overlays: settings.overlays || {}, settingsLoaded: true });
 
     // Listen for changes from main process (e.g. window resize/move or toggles)
+    if (window.electronAPI.removeSettingsListeners) {
+      window.electronAPI.removeSettingsListeners();
+    }
     window.electronAPI.onSettingsUpdated((newSettings) => {
       set({ overlays: newSettings.overlays || {} });
     });
