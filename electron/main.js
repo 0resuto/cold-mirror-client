@@ -12,6 +12,8 @@ app.whenReady().then(() => {
       overlays: {
         standings: { enabled: false, x: 100, y: 100, width: 400, height: 600, clickThrough: false },
         relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false },
+        fuel: { enabled: false, x: 100, y: 750, width: 250, height: 150, clickThrough: false },
+        inputs: { enabled: false, x: 400, y: 750, width: 300, height: 150, clickThrough: false },
       }
     }
   });

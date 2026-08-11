@@ -9,8 +9,10 @@ export const useLiveStore = create((set) => ({
   liveTrackName: null,
   livePlayerName: null,
   liveCarName: null,
+  driverCarIdx: null,
+  trackLength: null,
   setLiveLapData: (data) => set({ liveLapData: data }),
-  setSessionDrivers: (drivers) => set({ sessionDrivers: drivers }),
+  setSessionDrivers: (drivers, carIdx, trackLength) => set({ sessionDrivers: drivers, driverCarIdx: carIdx, trackLength }),
   appendLiveData: (newData) => set((state) => {
     const updated = [...state.liveLapData, newData];
     return { liveLapData: updated.length > MAX_LIVE_POINTS ? updated.slice(-MAX_LIVE_POINTS) : updated };

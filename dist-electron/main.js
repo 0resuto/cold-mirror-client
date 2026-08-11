@@ -13295,12 +13295,16 @@ class MockTelemetryService {
     console.log("Mock Telemetry started");
     const sessionData = {
       data: {
+        WeekendInfo: {
+          TrackLength: "4.00 km"
+        },
         DriverInfo: {
+          DriverCarIdx: 1,
           Drivers: [
-            { CarIdx: 0, UserName: "Mock Driver 1", CarNumber: "1", iRating: 2500, LicString: "A 3.50" },
-            { CarIdx: 1, UserName: "Mock Driver 2", CarNumber: "2", iRating: 2100, LicString: "B 2.10" },
-            { CarIdx: 2, UserName: "Mock Driver 3", CarNumber: "42", iRating: 1800, LicString: "C 3.99" },
-            { CarIdx: 3, UserName: "Mock Driver 4", CarNumber: "99", iRating: 3100, LicString: "A 4.99" }
+            { CarIdx: 0, UserName: "Mock Driver 1", CarNumber: "1", iRating: 2500, LicString: "A 3.50", CarClassColor: 16711680 },
+            { CarIdx: 1, UserName: "Mock Driver 2 (Player)", CarNumber: "2", iRating: 2100, LicString: "B 2.10", CarClassColor: 65280 },
+            { CarIdx: 2, UserName: "Mock Driver 3", CarNumber: "42", iRating: 1800, LicString: "C 3.99", CarClassColor: 65280 },
+            { CarIdx: 3, UserName: "Mock Driver 4", CarNumber: "99", iRating: 3100, LicString: "A 4.99", CarClassColor: 16711680 }
           ]
         }
       }
@@ -13312,9 +13316,25 @@ class MockTelemetryService {
       if (this.tickCount % 30 === 0) {
         this.ipcSender("session-info", sessionData);
       }
+      const throttle = Math.max(0, Math.sin(this.sessionTime * 2));
+      const brake = Math.max(0, -Math.sin(this.sessionTime * 2));
+      const steering = Math.sin(this.sessionTime) * 1.5;
+      const gear = Math.floor(Math.abs(Math.sin(this.sessionTime * 0.5) * 6)) + 1;
+      const rpm = 3e3 + throttle * 4e3;
+      const speed = gear * 30 + throttle * 20;
+      const fuelLevel = Math.max(0, 50 - this.sessionTime * 0.05);
       const telemetry = {
         values: {
           SessionTime: this.sessionTime,
+          FuelLevel: fuelLevel,
+          FuelUsePerHour: 15.5,
+          SteeringWheelAngle: steering,
+          Throttle: throttle,
+          Brake: brake,
+          Clutch: 0,
+          Gear: gear,
+          RPM: rpm,
+          Speed: speed,
           CarIdxPosition: [1, 3, 4, 2],
           CarIdxClassPosition: [1, 3, 4, 2],
           CarIdxEstTime: [100.1, 100.5, 102, 100.3],
@@ -13355,6 +13375,16 @@ class MockTelemetryService {
     }
     return {
       SessionTime: values.SessionTime,
+      player_name: "Mock Driver 2 (Player)",
+      FuelLevel: values.FuelLevel || 0,
+      FuelUsePerHour: values.FuelUsePerHour || 0,
+      SteeringWheelAngle: values.SteeringWheelAngle || 0,
+      Throttle: values.Throttle || 0,
+      Brake: values.Brake || 0,
+      Clutch: values.Clutch || 0,
+      Gear: values.Gear || 0,
+      RPM: values.RPM || 0,
+      Speed: values.Speed || 0,
       grid
     };
   }
@@ -13428,6 +13458,15 @@ class TelemetryService {
     return {
       SessionTime: values.SessionTime,
       player_name: ((_h = (_g = (_c = (_b = (_a = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _a.data) == null ? void 0 : _b.DriverInfo) == null ? void 0 : _c.Drivers) == null ? void 0 : _g[(_f = (_e = (_d = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _d.data) == null ? void 0 : _e.DriverInfo) == null ? void 0 : _f.DriverCarIdx]) == null ? void 0 : _h.UserName) || "",
+      FuelLevel: values.FuelLevel || 0,
+      FuelUsePerHour: values.FuelUsePerHour || 0,
+      SteeringWheelAngle: values.SteeringWheelAngle || 0,
+      Throttle: values.Throttle || 0,
+      Brake: values.Brake || 0,
+      Clutch: values.Clutch || 0,
+      Gear: values.Gear || 0,
+      RPM: values.RPM || 0,
+      Speed: values.Speed || 0,
       grid
     };
   }
@@ -13467,7 +13506,9 @@ app.whenReady().then(() => {
     defaults: {
       overlays: {
         standings: { enabled: false, x: 100, y: 100, width: 400, height: 600, clickThrough: false },
-        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false }
+        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false },
+        fuel: { enabled: false, x: 100, y: 750, width: 250, height: 150, clickThrough: false },
+        inputs: { enabled: false, x: 400, y: 750, width: 300, height: 150, clickThrough: false }
       }
     }
   });

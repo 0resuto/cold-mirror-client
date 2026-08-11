@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { LiveStandings } from './widgets/Standings/LiveStandings';
+import { LiveRelative } from './widgets/Relative/LiveRelative';
+import { LiveFuel } from './widgets/Fuel/LiveFuel';
+import { LiveInputs } from './widgets/Inputs/LiveInputs';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { Power, MousePointer2, Trophy } from 'lucide-react';
@@ -22,6 +25,8 @@ function Dashboard() {
   const overlayConfigs = [
     { id: 'standings', name: 'Live Standings', description: 'Real-time positions, gaps, and iRating.' },
     { id: 'relative', name: 'Relative', description: 'Drivers immediately ahead and behind on track.' },
+    { id: 'fuel', name: 'Fuel Calculator', description: 'Live fuel usage and remaining laps.' },
+    { id: 'inputs', name: 'Input Trace', description: 'Steering wheel, pedals, gear and speed.' },
   ];
 
   return (
@@ -103,8 +108,8 @@ function ResizeHandle({ windowId }) {
       const deltaX = e.screenX - startPos.current.x;
       const deltaY = e.screenY - startPos.current.y;
       
-      const newWidth = Math.max(250, startPos.current.w + deltaX);
-      const newHeight = Math.max(200, startPos.current.h + deltaY);
+      const newWidth = Math.max(100, startPos.current.w + deltaX);
+      const newHeight = Math.max(100, startPos.current.h + deltaY);
       
       window.electronAPI.windowAction(windowId, 'resize', { width: newWidth, height: newHeight });
     };
@@ -139,7 +144,7 @@ function ResizeHandle({ windowId }) {
   );
 }
 
-function OverlayContainer({ title, windowId, children }) {
+function OverlayContainer({ title, windowId, hideHeader = false, children }) {
   return (
     <div 
       className="w-full h-screen overflow-hidden p-3 relative" 
@@ -149,18 +154,20 @@ function OverlayContainer({ title, windowId, children }) {
         className="w-full h-full relative" 
         style={{ WebkitAppRegion: 'no-drag' }}
       >
-        <div className="glass border border-brand-60/60 rounded-xl overflow-hidden shadow-2xl h-full flex flex-col relative">
-          <div className="bg-brand-bg/80 px-4 py-2 border-b border-brand-60/60 flex justify-between items-center select-none" style={{ WebkitAppRegion: 'drag' }}>
-            <span className="text-[10px] font-bold text-brand-10/60 uppercase tracking-widest">{title}</span>
-            <button 
-              className="text-brand-60 hover:text-brand-30 transition-colors"
-              onClick={() => window.electronAPI.windowAction(windowId, 'close')}
-              style={{ WebkitAppRegion: 'no-drag' }}
-            >
-              ×
-            </button>
-          </div>
-          <div className="p-2 flex-1 overflow-hidden">
+        <div className={`glass border border-brand-60/60 rounded-xl overflow-hidden shadow-2xl h-full flex flex-col relative`}>
+          {!hideHeader && (
+            <div className="bg-brand-bg/80 px-4 py-2 border-b border-brand-60/60 flex justify-between items-center select-none" style={{ WebkitAppRegion: 'drag' }}>
+              <span className="text-[10px] font-bold text-brand-10/60 uppercase tracking-widest">{title}</span>
+              <button 
+                className="text-brand-60 hover:text-brand-30 transition-colors"
+                onClick={() => window.electronAPI.windowAction(windowId, 'close')}
+                style={{ WebkitAppRegion: 'no-drag' }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          <div className="p-2 flex-1 overflow-hidden h-full">
             {children}
           </div>
         </div>
@@ -171,28 +178,46 @@ function OverlayContainer({ title, windowId, children }) {
 }
 
 function App() {
-  useLiveTelemetryIPC(true);
+  const urlParams = new URLSearchParams(window.location.search);
+  const windowType = urlParams.get('window'); // 'dashboard' or 'overlay'
+  const overlayType = urlParams.get('type');
+  const windowId = urlParams.get('id');
 
-  const params = new URLSearchParams(window.location.search);
-  const windowType = params.get('window') || 'dashboard';
-  const overlayType = params.get('type');
-  const windowId = params.get('id') || 'dashboard';
-
-  if (windowType === 'dashboard') {
-    return <Dashboard />;
-  }
+  // Initialize telemetry IPC connection
+  useLiveTelemetryIPC();
 
   if (windowType === 'overlay') {
+    let content = null;
+    let title = 'Overlay';
+    let hideHeader = false;
+    
     if (overlayType === 'standings') {
-      return (
-        <OverlayContainer title="Live Standings" windowId={windowId}>
-          <LiveStandings />
-        </OverlayContainer>
-      );
+      content = <LiveStandings />;
+      title = 'Live Standings';
+    } else if (overlayType === 'relative') {
+      content = <LiveRelative />;
+      title = 'Relative';
+    } else if (overlayType === 'fuel') {
+      content = <LiveFuel />;
+      title = 'Fuel Calculator';
+      hideHeader = true; // LiveFuel renders its own header
+    } else if (overlayType === 'inputs') {
+      content = <LiveInputs />;
+      title = 'Input Trace';
+      hideHeader = true; // LiveInputs renders without header for sleek look
+    } else {
+      content = <div className="text-white p-4">Unknown overlay type</div>;
     }
+
+    return (
+      <OverlayContainer title={title} windowId={windowId} hideHeader={hideHeader}>
+        {content}
+      </OverlayContainer>
+    );
   }
 
-  return <div className="text-white p-4">Unknown Window Type</div>;
+  // Default to dashboard
+  return <Dashboard />;
 }
 
 export default App;

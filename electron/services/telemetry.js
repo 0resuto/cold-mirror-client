@@ -86,6 +86,15 @@ export class TelemetryService {
     return {
       SessionTime: values.SessionTime,
       player_name: data?.sessionInfo?.data?.DriverInfo?.Drivers?.[data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
+      FuelLevel: values.FuelLevel || 0,
+      FuelUsePerHour: values.FuelUsePerHour || 0,
+      SteeringWheelAngle: values.SteeringWheelAngle || 0,
+      Throttle: values.Throttle || 0,
+      Brake: values.Brake || 0,
+      Clutch: values.Clutch || 0,
+      Gear: values.Gear || 0,
+      RPM: values.RPM || 0,
+      Speed: values.Speed || 0,
       grid
     };
   }

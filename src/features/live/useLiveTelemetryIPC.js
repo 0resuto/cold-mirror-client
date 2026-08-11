@@ -24,7 +24,10 @@ export function useLiveTelemetryIPC(enabled = true) {
 
     window.electronAPI.onSessionInfo((sessionInfo) => {
       if (sessionInfo?.data?.DriverInfo?.Drivers) {
-         setSessionDrivers(sessionInfo.data.DriverInfo.Drivers);
+         const drivers = sessionInfo.data.DriverInfo.Drivers;
+         const driverCarIdx = sessionInfo.data.DriverInfo.DriverCarIdx;
+         const trackLength = sessionInfo.data.WeekendInfo?.TrackLength;
+         setSessionDrivers(drivers, driverCarIdx, trackLength);
       }
     });
 
