@@ -5,7 +5,7 @@
   <p>
     <a href="https://github.com/0resuto/cold-mirror-client/actions/workflows/lint.yml"><img src="https://github.com/0resuto/cold-mirror-client/actions/workflows/lint.yml/badge.svg" alt="Lint Status" /></a>
     <img src="https://img.shields.io/github/license/0resuto/cold-mirror-client" alt="License" />
-    <img src="https://img.shields.io/github/v/release/0resuto/cold-mirror-client" alt="Release" />
+    <a href="https://github.com/0resuto/cold-mirror-client/releases/latest"><img src="https://img.shields.io/github/v/release/0resuto/cold-mirror-client?include_prereleases" alt="Release" /></a>
   </p>
   <p>
     <img src="https://img.shields.io/badge/Electron-191970?logo=electron&logoColor=white" alt="Electron" />
