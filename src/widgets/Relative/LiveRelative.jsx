@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
+import { LoadingState } from '../../components/LoadingState';
 
 export function LiveRelative() {
   const [relativeDrivers, setRelativeDrivers] = useState([]);
@@ -26,14 +27,14 @@ export function LiveRelative() {
       const playerGrid = grid[state.driverCarIdx];
       if (!playerGrid) return; // Player not on track
 
-      const playerPct = playerGrid.LapDistPct;
+      const playerPct = playerGrid.LapDistPct ?? 0;
 
       const relative = Object.keys(grid).map(carIdx => {
         const driverGrid = grid[carIdx];
         const driverInfo = state.sessionDrivers.find(d => d.CarIdx === Number(carIdx));
         if (!driverInfo) return null;
 
-        let pctDiff = driverGrid.LapDistPct - playerPct;
+        let pctDiff = (driverGrid?.LapDistPct ?? 0) - playerPct;
         if (pctDiff > 0.5) pctDiff -= 1;
         if (pctDiff < -0.5) pctDiff += 1;
 
@@ -67,19 +68,11 @@ export function LiveRelative() {
   }, []);
 
   if (!sessionDrivers || sessionDrivers.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full w-full">
-        <p className="text-brand-10/50 font-mono text-sm animate-pulse">Waiting for telemetry...</p>
-      </div>
-    );
+    return <LoadingState message="Waiting for Telemetry..." />;
   }
 
   if (relativeDrivers.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full w-full">
-        <p className="text-brand-10/50 font-mono text-sm">Player not on track.</p>
-      </div>
-    );
+    return <LoadingState message="Player not on track" />;
   }
 
   return (

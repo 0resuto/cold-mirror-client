@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Fuel, Wrench, CircleDashed } from 'lucide-react';
+import { LoadingState } from '../../components/LoadingState';
 
 export function PitHelper() {
   const [data, setData] = useState({
@@ -11,6 +12,7 @@ export function PitHelper() {
     pitSvFuel: 0,
     limitKph: 80,
   });
+  const [hasData, setHasData] = useState(false);
 
   // Settings for this widget
   const settings = useAppStore(state => state.overlays['pit'] || {});
@@ -26,7 +28,11 @@ export function PitHelper() {
       lastUpdateTime = now;
 
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
 
       const session = state.sessionData;
       let limit = 80;
@@ -43,10 +49,10 @@ export function PitHelper() {
       }
 
       setData({
-        speed: latestData.Speed * 3.6, // m/s to km/h
+        speed: Number(latestData.Speed || 0) * 3.6, // m/s to km/h
         onPitRoad: latestData.grid[latestData.playerCarIdx]?.OnPitRoad || false,
-        pitSvFlags: latestData.PitSvFlags || 0,
-        pitSvFuel: latestData.PitSvFuel || 0,
+        pitSvFlags: Number(latestData.PitSvFlags) || 0,
+        pitSvFuel: Number(latestData.PitSvFuel) || 0,
         limitKph: limit,
       });
     });
@@ -72,6 +78,10 @@ export function PitHelper() {
   const tires = (data.pitSvFlags & 15) > 0; // Any tire
   const fuel = (data.pitSvFlags & 16) > 0;
   const fastRepair = (data.pitSvFlags & 64) > 0;
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Pit Data" />;
+  }
 
   return (
     <div className={`w-full h-full flex flex-col font-sans overflow-hidden ${isSpeeding ? 'bg-red-600/90 shadow-[0_0_50px_rgba(220,38,38,0.8)]' : 'bg-transparent'}`}>

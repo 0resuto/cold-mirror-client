@@ -10,6 +10,7 @@ import { PitHelper } from './widgets/PitHelper/PitHelper';
 import { DigitalDash } from './widgets/Dashboard/DigitalDash';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Power, Trophy, Settings, ChevronDown, ChevronUp, Lock, Unlock, Minus, Square, X } from 'lucide-react';
 
 const getSliderFill = (val, min, max) => {
@@ -278,7 +279,8 @@ function OverlayContainer({ windowId, children }) {
   const activeOpacity = settings.activeOpacity ?? 1.0;
   const inactiveOpacity = settings.inactiveOpacity ?? defaultInactive;
 
-  const currentOpacity = isActive ? activeOpacity : inactiveOpacity;
+  const isLocked = settings.clickThrough;
+  const currentOpacity = (!isLocked || isActive) ? activeOpacity : inactiveOpacity;
   
   return (
     <div 
@@ -286,7 +288,9 @@ function OverlayContainer({ windowId, children }) {
       style={{ WebkitAppRegion: 'drag', opacity: currentOpacity, transition: 'opacity 0.5s ease-in-out' }}
     >
       <div className="w-full h-full relative flex flex-col items-center justify-center" style={{ zoom: scale }}>
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </div>
       <ResizeHandle windowId={windowId} />
     </div>

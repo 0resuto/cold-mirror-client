@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Wrench, Timer } from 'lucide-react';
+import { LoadingState } from '../../components/LoadingState';
 
 export function LinearTrackMap() {
   const [gridData, setGridData] = useState({});
   const [playerIdx, setPlayerIdx] = useState(null);
+  const [hasData, setHasData] = useState(false);
   
   useEffect(() => {
     let lastUpdateTime = 0;
@@ -17,7 +19,11 @@ export function LinearTrackMap() {
       lastUpdateTime = now;
       
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData || !latestData.grid) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
       
       useAppStore.getState().setWidgetActive('trackmap', latestData.Speed > 1);
       setGridData(latestData.grid || {});
@@ -29,6 +35,10 @@ export function LinearTrackMap() {
 
   const playerCar = playerIdx != null ? gridData[playerIdx] : null;
   const playerLap = playerCar?.Lap || 0;
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Track Map" />;
+  }
 
   return (
     <div className="w-full h-full flex flex-col justify-center px-4">

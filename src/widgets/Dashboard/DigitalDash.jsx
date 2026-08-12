@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
+import { LoadingState } from '../../components/LoadingState';
 
 export function DigitalDash() {
   const [data, setData] = useState({
@@ -9,6 +10,7 @@ export function DigitalDash() {
     rpm: 0,
     shiftPct: 0,
   });
+  const [hasData, setHasData] = useState(false);
 
   const settings = useAppStore(state => state.overlays['dash'] || {});
   const units = settings.units || 'kph';
@@ -22,21 +24,29 @@ export function DigitalDash() {
       lastUpdateTime = now;
 
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
 
       useAppStore.getState().setWidgetActive('dash', latestData.Speed > 1);
 
       setData({
-        gear: latestData.Gear || 0,
-        speed: latestData.Speed * 3.6, // m/s to km/h
-        rpm: latestData.RPM || 0,
-        shiftPct: Math.max(0, Math.min(1.2, latestData.ShiftIndicatorPct || 0)),
+        gear: Number(latestData.Gear) || 0,
+        speed: Number(latestData.Speed || 0) * 3.6, // m/s to km/h
+        rpm: Number(latestData.RPM) || 0,
+        shiftPct: Math.max(0, Math.min(1.2, Number(latestData.ShiftIndicatorPct) || 0)),
       });
     });
     return () => unsubscribe();
   }, []);
 
   const displaySpeed = units === 'mph' ? data.speed / 1.60934 : data.speed;
+  
+  if (!hasData) {
+    return <LoadingState message="Waiting for Dashboard" />;
+  }
   
   // Format Gear
   let gearStr = data.gear.toString();

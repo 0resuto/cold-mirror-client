@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Thermometer, Wind, Navigation, Cloud } from 'lucide-react';
+import { LoadingState } from '../../components/LoadingState';
 
 export function LiveWeather() {
   const [weather, setWeather] = useState({ AirTemp: 0, TrackTemp: 0, WindVel: 0, WindDir: 0, Yaw: 0 });
+  const [hasData, setHasData] = useState(false);
   
   useEffect(() => {
     let lastUpdateTime = 0;
@@ -15,20 +17,28 @@ export function LiveWeather() {
       lastUpdateTime = now;
       
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
       
       useAppStore.getState().setWidgetActive('weather', latestData.Speed > 1);
 
       setWeather({
-        AirTemp: latestData.AirTemp || 0,
-        TrackTemp: latestData.TrackTemp || 0,
-        WindVel: latestData.WindVel || 0,
-        WindDir: latestData.WindDir || 0,
-        Yaw: latestData.Yaw || 0
+        AirTemp: Number(latestData.AirTemp) || 0,
+        TrackTemp: Number(latestData.TrackTemp) || 0,
+        WindVel: Number(latestData.WindVel) || 0,
+        WindDir: Number(latestData.WindDir) || 0,
+        Yaw: Number(latestData.Yaw) || 0
       });
     });
     return () => unsubscribe();
   }, []);
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Weather Data" />;
+  }
 
   return (
     <div className="w-full h-full flex flex-row items-center justify-center gap-4 px-2">

@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Fuel } from 'lucide-react';
+import { LoadingState } from '../../components/LoadingState';
 
 export function LiveFuel() {
   const [fuelData, setFuelData] = useState({ level: 0, usage: 0, lapsRemaining: 0 });
+  const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
     let lastUpdateTime = 0;
@@ -16,13 +18,17 @@ export function LiveFuel() {
       lastUpdateTime = now;
 
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
 
       useAppStore.getState().setWidgetActive('fuel', latestData.Speed > 1);
 
       // FuelUsePerHour is usually L/hr or kg/hr. iRacing uses Liters.
-      const level = latestData.FuelLevel || 0;
-      const usage = latestData.FuelUsePerHour || 0;
+      const level = Number(latestData.FuelLevel) || 0;
+      const usage = Number(latestData.FuelUsePerHour) || 0;
       
       // Calculate laps remaining (mock estimate based on usage/speed or just arbitrary for mock)
       // Real iRacing requires tracking fuel per lap. We'll show raw liters for now and an arbitrary laps estimate.
@@ -37,6 +43,10 @@ export function LiveFuel() {
 
     return () => unsubscribe();
   }, []);
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Fuel Data" />;
+  }
 
   return (
     <div className="flex flex-col h-full w-full font-sans overflow-hidden">

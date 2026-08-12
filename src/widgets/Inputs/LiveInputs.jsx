@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
+import { LoadingState } from '../../components/LoadingState';
 import { Gamepad2 } from 'lucide-react';
 
 const MAX_HISTORY = 90; // 3 seconds at 30Hz
@@ -28,7 +29,11 @@ export function LiveInputs() {
       lastUpdateTime = now;
 
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
 
       useAppStore.getState().setWidgetActive('inputs', latestData.Speed > 1);
 
@@ -86,6 +91,10 @@ export function LiveInputs() {
       return `${x},${y}`;
     }).join(' ');
   };
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Inputs" />;
+  }
 
   return (
     <div className="flex flex-col h-full w-full font-sans overflow-hidden">

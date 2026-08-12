@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useLiveStore } from '../../store/useLiveStore';
 import { Trophy, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { LoadingState } from '../../components/LoadingState';
 
 // Helper to convert iRacing decimal color to hex
 const intToHexColor = (colorInt) => {
@@ -112,11 +113,7 @@ export const LiveStandings = () => {
   }, []);
 
   if (standings.length === 0) {
-    return (
-      <div className="w-full h-full flex items-center justify-center border border-brand-60/40 rounded-xl bg-brand-60/10 text-brand-10/40 text-xs">
-        Waiting for grid data...
-      </div>
-    );
+    return <LoadingState message="Waiting for Standings Data" />;
   }
 
   const isLocked = config.clickThrough;

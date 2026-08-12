@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
+import { LoadingState } from '../../components/LoadingState';
 
 const RADAR_RANGE_METERS = 30; // Zoomed in to show cars within 30 meters ahead/behind
 
@@ -9,6 +10,7 @@ export function LiveRadar() {
     carLeftRight: 0,
     nearbyCars: []
   });
+  const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
     let lastUpdateTime = 0;
@@ -19,7 +21,11 @@ export function LiveRadar() {
       lastUpdateTime = now;
 
       const latestData = state.latestTelemetry;
-      if (!latestData) return;
+      if (!latestData || !latestData.grid) {
+        setHasData(false);
+        return;
+      }
+      setHasData(true);
 
       const driverCarIdx = state.driverCarIdx;
       const trackLengthStr = state.trackLength || "4.00 km";
@@ -82,6 +88,10 @@ export function LiveRadar() {
     const normalized = distanceMeters / RADAR_RANGE_METERS; // -1 to 1
     return 50 - (normalized * 50); // 0% to 100%
   };
+
+  if (!hasData) {
+    return <LoadingState message="Waiting for Radar Data" />;
+  }
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden p-2">
