@@ -47,6 +47,9 @@ function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetting }) {
   const defaultStandingsColumns = { pos: true, num: true, driver: true, carName: false, carClass: true, classPos: true, srating: true, irating: true, gap: true, bestLap: false, lastLap: true, trackPct: false, laps: false };
   const standingsColLabels = { pos: 'POS', num: '#', driver: 'Driver', carName: 'Car', carClass: 'Class', classPos: 'C.POS', srating: 'SR', irating: 'iRating', gap: 'Gap', bestLap: 'Best Lap', lastLap: 'Last Lap', trackPct: 'Track %', laps: 'Laps' };
 
+  const defaultRelativeColumns = { classBadge: true, num: true, driver: true, irating: true, srating: true };
+  const relativeColLabels = { classBadge: 'Class', num: '#', driver: 'Driver', irating: 'iRating', srating: 'SR' };
+
   return (
     <div className="bg-brand-60/10 border border-brand-60/30 rounded-xl flex flex-col transition-colors hover:border-brand-60/50 overflow-hidden">
       {/* Header (Always Visible) */}
@@ -111,28 +114,32 @@ function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetting }) {
           {renderSlider('Active Opacity', 'activeOpacity', activeOpacity, 0.0, 1.0)}
           {renderSlider('Inactive Opacity', 'inactiveOpacity', inactiveOpacity, 0.0, 1.0)}
           
-          {config.id === 'standings' && (
-            <div className="flex flex-col gap-2 border-t border-brand-60/20 pt-3 mt-1">
-              <span className="text-[10px] whitespace-nowrap font-bold text-brand-10/60 uppercase">Visible Columns:</span>
-              <div className="flex flex-wrap gap-2">
-                {Object.keys(defaultStandingsColumns).map(col => {
-                  const isActive = state.columns ? state.columns[col] : defaultStandingsColumns[col];
-                  return (
-                    <button 
-                      key={col}
-                      onClick={() => {
-                        const currentCols = state.columns || defaultStandingsColumns;
-                        updateOverlaySetting(config.id, { columns: { ...currentCols, [col]: !isActive } });
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-semibold transition-all border ${isActive ? 'bg-brand-30/10 text-brand-30 border-brand-30/30' : 'bg-brand-60/10 text-brand-10/40 border-brand-60/20 hover:bg-brand-60/30 hover:text-brand-10/80'}`}
-                    >
-                      {standingsColLabels[col] || col}
-                    </button>
-                  );
-                })}
+          {(config.id === 'standings' || config.id === 'relative') && (() => {
+            const defaultCols = config.id === 'standings' ? defaultStandingsColumns : defaultRelativeColumns;
+            const labels = config.id === 'standings' ? standingsColLabels : relativeColLabels;
+            return (
+              <div className="flex flex-col gap-2 border-t border-brand-60/20 pt-3 mt-1">
+                <span className="text-[10px] whitespace-nowrap font-bold text-brand-10/60 uppercase">Visible Columns:</span>
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(defaultCols).map(col => {
+                    const isActive = state.columns ? (state.columns[col] ?? defaultCols[col]) : defaultCols[col];
+                    return (
+                      <button 
+                        key={col}
+                        onClick={() => {
+                          const currentCols = state.columns || defaultCols;
+                          updateOverlaySetting(config.id, { columns: { ...currentCols, [col]: !isActive } });
+                        }}
+                        className={`px-2 py-1 rounded text-[10px] font-semibold transition-all border ${isActive ? 'bg-brand-30/10 text-brand-30 border-brand-30/30' : 'bg-brand-60/10 text-brand-10/40 border-brand-60/20 hover:bg-brand-60/30 hover:text-brand-10/80'}`}
+                      >
+                        {labels[col] || col}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>

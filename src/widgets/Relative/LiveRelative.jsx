@@ -1,12 +1,21 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import { useAppStore } from '../../store/useAppStore';
 import { LoadingState } from '../../components/LoadingState';
+import { motion } from 'framer-motion';
+import { ClassBadge, SafetyRatingBadge } from '../../components/DriverBadges';
 
 export function LiveRelative() {
   const [relativeDrivers, setRelativeDrivers] = useState([]);
   const sessionDrivers = useLiveStore(state => state.sessionDrivers);
   const driverCarIdx = useLiveStore(state => state.driverCarIdx);
+
+  const overlays = useAppStore(state => state.overlays);
+  const config = overlays.relative || {};
+  
+  const defaultCols = { classBadge: true, num: true, driver: true, irating: true, srating: true };
+  const columns = config.columns || defaultCols;
+  const isLocked = config.clickThrough;
 
   useEffect(() => {
     let lastUpdateTime = 0;
@@ -38,19 +47,21 @@ export function LiveRelative() {
         if (pctDiff > 0.5) pctDiff -= 1;
         if (pctDiff < -0.5) pctDiff += 1;
 
-        // Roughly estimate time gap based on average speed or just use distance for now
+        // Roughly estimate time gap based on distance
         const estTimeGap = pctDiff * 100;
 
         return {
           carIdx: Number(carIdx),
           name: driverInfo.UserName,
-          carNumber: driverInfo.CarNumber,
+          carNumber: driverInfo.CarNumberRaw || driverInfo.CarNumber || '0',
           irating: driverInfo.iRating,
           license: driverInfo.LicString,
+          licLevel: driverInfo.LicLevel,
+          carClassColor: driverInfo.CarClassColor,
+          carClassShortName: driverInfo.CarClassShortName,
           isPlayer: Number(carIdx) === state.driverCarIdx,
           pctDiff,
           gap: estTimeGap,
-          color: driverInfo.CarClassColor ? `#${driverInfo.CarClassColor.toString(16).padStart(6, '0')}` : '#666'
         };
       }).filter(Boolean);
 
@@ -76,36 +87,74 @@ export function LiveRelative() {
   }
 
   return (
-    <div className="flex flex-col h-full w-full font-sans bg-brand-bg/40 rounded-lg overflow-hidden">
-      <div className="px-3 py-1.5 bg-brand-60/40 border-b border-brand-60/50 flex justify-between items-center">
-        <span className="text-[10px] font-bold text-brand-10/70 uppercase tracking-widest">Relative</span>
-        <span className="text-[10px] text-brand-10/40">Delta</span>
-      </div>
-      <div className="flex-1 flex flex-col p-1 gap-1">
-        {relativeDrivers.map(d => (
-          <div 
-            key={d.carIdx} 
-            className={`flex items-center justify-between px-2 py-1.5 rounded-md ${d.isPlayer ? 'bg-brand-30/20 border border-brand-30/30' : 'bg-brand-60/20'}`}
-          >
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div 
-                className="w-1 h-4 rounded-full" 
-                style={{ backgroundColor: d.color }}
-              />
-              <span className="font-mono text-xs text-brand-10/60 w-5 text-right">#{d.carNumber}</span>
-              <span className="text-sm font-semibold truncate text-brand-10 drop-shadow-md">
-                {d.name}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2 pl-2">
-              <span className="text-[10px] text-brand-10/40 w-8 text-right bg-brand-bg/50 rounded px-1">{d.irating}</span>
-              <span className={`font-mono text-xs font-bold w-12 text-right ${d.isPlayer ? 'text-brand-30' : d.gap > 0 ? 'text-accent-red' : 'text-accent-green'}`}>
-                {d.isPlayer ? '0.0' : `${d.gap > 0 ? '+' : ''}${Math.abs(d.gap).toFixed(1)}`}
-              </span>
-            </div>
-          </div>
-        ))}
+    <div className={`flex flex-col w-full h-full rounded-xl overflow-hidden transition-all duration-300 ${
+      isLocked ? 'bg-transparent border-transparent' : 'bg-brand-bg/60 border border-brand-60/60 shadow-xl backdrop-blur-sm'
+    }`}>
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <table className="w-full text-left border-collapse">
+          <thead className={`sticky top-0 z-10 shadow-sm transition-colors ${isLocked ? 'bg-brand-60/95 backdrop-blur-md' : 'bg-brand-60/80'}`}>
+            <tr>
+              {columns.classBadge && <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-12 text-center">Class</th>}
+              {columns.num && <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-8 text-center">#</th>}
+              {columns.driver && <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-full">Driver</th>}
+              {columns.srating && <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-14 text-center">SR</th>}
+              {columns.irating && <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-12 text-right">iRating</th>}
+              <th className="py-1 px-3 text-[10px] font-bold text-brand-10/60 uppercase tracking-wider w-14 text-right">Delta</th>
+            </tr>
+          </thead>
+          <tbody className="text-xs font-mono">
+            {relativeDrivers.map((driver) => {
+              const isPlayer = driver.isPlayer;
+
+              return (
+                <motion.tr 
+                  layout
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  key={driver.carIdx} 
+                  className={`border-b transition-colors ${
+                    isPlayer ? 'bg-brand-bg bg-gradient-to-r from-white/20 to-white/5 border-white/30 shadow-[0_3px_8px_rgba(0,0,0,0.4),0_1px_0_#2b2d34,0_-1px_0_#2b2d34,inset_0_1px_0_rgba(255,255,255,0.15)] relative z-20' : 
+                    'bg-brand-bg border-brand-60/20 hover:bg-brand-60/30'
+                  }`}
+                >
+                  {columns.classBadge && (
+                    <td className="py-1 px-3 text-center">
+                      <ClassBadge colorInt={driver.carClassColor} shortName={driver.carClassShortName} />
+                    </td>
+                  )}
+                  {columns.num && (
+                    <td className={`py-1 px-3 text-center font-bold italic ${isPlayer ? 'text-white' : 'text-brand-30'}`}>
+                      {driver.carNumber}
+                    </td>
+                  )}
+                  {columns.driver && (
+                    <td className="py-1 px-3">
+                      <span className={`font-sans truncate inline-block max-w-[140px] align-middle ${isPlayer ? 'font-black text-white text-[13px] drop-shadow-md' : 'font-semibold text-brand-10'}`}>
+                        {driver.name || 'Unknown'}
+                      </span>
+                    </td>
+                  )}
+                  {columns.srating && (
+                    <td className="py-1 px-3 text-center">
+                      <SafetyRatingBadge licLevel={driver.licLevel} licString={driver.license} />
+                    </td>
+                  )}
+                  {columns.irating && (
+                    <td className={`py-1 px-3 text-right font-semibold ${isPlayer ? 'text-brand-30' : 'text-brand-30'}`}>
+                      {driver.irating > 0 ? driver.irating : '-'}
+                    </td>
+                  )}
+                  <td className={`py-1 px-3 text-right font-mono font-bold text-[11px] ${
+                    isPlayer ? 'text-white' : driver.gap > 0 ? 'text-accent-red' : 'text-accent-green'
+                  }`}>
+                    {isPlayer ? '0.0' : `${driver.gap > 0 ? '+' : ''}${Math.abs(driver.gap).toFixed(1)}`}
+                  </td>
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -4,35 +4,7 @@ import { useLiveStore } from '../../store/useLiveStore';
 import { Trophy, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { LoadingState } from '../../components/LoadingState';
-
-// Helper to convert iRacing decimal color to hex
-const intToHexColor = (colorInt) => {
-  if (colorInt === undefined || colorInt === null) return '#444444'; // default gray
-  const hex = colorInt.toString(16).padStart(6, '0');
-  return `#${hex}`;
-};
-
-// Calculate relative luminance to determine if text should be black or white
-const getContrastYIQ = (hexcolor) => {
-  if (!hexcolor) return 'white';
-  const r = parseInt(hexcolor.substring(1, 3), 16);
-  const g = parseInt(hexcolor.substring(3, 5), 16);
-  const b = parseInt(hexcolor.substring(5, 7), 16);
-  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-  return (yiq >= 128) ? 'black' : 'white';
-};
-
-const getLicenseTheme = (licLevel, licString) => {
-  const level = licLevel || 0;
-  const str = licString || '';
-  if (str.startsWith('R')) return { bg: '#e03131', text: '#000000' }; // Soft Ruby
-  if (str.startsWith('D')) return { bg: '#e8590c', text: '#000000' }; // Rich Orange
-  if (str.startsWith('C')) return { bg: '#fcc419', text: '#000000' }; // Golden
-  if (str.startsWith('B')) return { bg: '#2f9e44', text: '#000000' }; // Emerald
-  if (str.startsWith('A')) return { bg: '#1c7ed6', text: '#000000' }; // Deep Blue
-  if (str.startsWith('P')) return { bg: '#adb5bd', text: '#000000' }; // Pro Silver (since text must be black)
-  return { bg: '#adb5bd', text: '#000000' };
-};
+import { ClassBadge, SafetyRatingBadge } from '../../components/DriverBadges';
 
 const formatTime = (seconds) => {
   if (!seconds || seconds <= 0) return '-';
@@ -143,9 +115,6 @@ export const LiveStandings = () => {
           </thead>
           <tbody className="text-xs font-mono">
             {standings.map((driver) => {
-              const classBgColor = intToHexColor(driver.CarClassColor);
-              const classTextColor = getContrastYIQ(classBgColor);
-              const licTheme = getLicenseTheme(driver.LicLevel, driver.LicString);
               const isPaceCar = driver.IsPaceCar || driver.IsSpectator;
               const isPlayer = driver.isPlayer;
 
@@ -195,72 +164,12 @@ export const LiveStandings = () => {
                   )}
                   {columns.carClass && (
                     <td className="py-1 px-3">
-                      <div className="flex justify-center items-center">
-                        <div 
-                          className="flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider whitespace-nowrap min-w-[4ch] bg-[#1e1e24] border border-brand-60/40 shadow-sm"
-                          title={driver.CarClassShortName}
-                        >
-                          <div 
-                            className="w-2 h-2 rounded-full" 
-                            style={{ 
-                              backgroundColor: classBgColor,
-                              boxShadow: `0 0 5px ${classBgColor}`
-                            }} 
-                          />
-                          <span className="text-white drop-shadow-sm">{driver.CarClassShortName || 'CAR'}</span>
-                        </div>
-                      </div>
+                      <ClassBadge colorInt={driver.CarClassColor} shortName={driver.CarClassShortName} />
                     </td>
                   )}
                   {columns.srating && (
                     <td className="py-1 px-3">
-                      <div className="flex justify-center items-center">
-                        {(() => {
-                          const str = driver.LicString || (driver.LicLevel ? `L${driver.LicLevel}` : '-');
-                          const parts = str.split(' ');
-                          const letter = parts[0];
-                          let num = parts.slice(1).join(' ');
-                          
-                          // Round SR to 1 decimal place if it's a valid number
-                          if (num && !isNaN(parseFloat(num))) {
-                            num = parseFloat(num).toFixed(1);
-                          }
-                          
-                          return (
-                            <div 
-                              className="flex rounded overflow-hidden shadow-sm"
-                              style={{ 
-                                backgroundColor: licTheme.bg,
-                                color: licTheme.text
-                              }}
-                            >
-                              <div 
-                                className={`pl-1.5 ${num ? 'pr-4' : 'pr-1.5'} py-0.5 text-[10px] font-black relative z-0`}
-                                style={{
-                                  backgroundColor: 'rgba(0,0,0,0.15)',
-                                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)'
-                                }}
-                              >
-                                {letter}
-                              </div>
-                              {num && (
-                                <div style={{ filter: 'drop-shadow(-2px 0px 1.5px rgba(0,0,0,0.4))' }} className="z-10 -ml-3">
-                                  <div 
-                                    className="pr-1.5 pl-2 py-0.5 text-[10px] font-bold h-full" 
-                                    style={{ 
-                                      backgroundColor: licTheme.bg,
-                                      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2)',
-                                      clipPath: 'polygon(5px 0, 100% 0, 100% 100%, 0 100%)'
-                                    }}
-                                  >
-                                    {num}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                      <SafetyRatingBadge licLevel={driver.LicLevel} licString={driver.LicString} />
                     </td>
                   )}
                   {columns.irating && (
