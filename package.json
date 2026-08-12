@@ -21,7 +21,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && electron-builder",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "prepare": "husky"
   },
   "dependencies": {
     "framer-motion": "^13.1.0",
@@ -37,6 +38,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "husky": "^9.1.7",
     "oxlint": "^0.6.0",
     "tailwindcss": "^4.0.0",
     "vite": "^6.0.0",
