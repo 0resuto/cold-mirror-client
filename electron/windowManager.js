@@ -107,9 +107,11 @@ export class WindowManager {
       return this.windows.get(id);
     }
 
+    const iconPath = path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/app_icon.ico' : '../dist/app_icon.ico');
+
     const win = new BrowserWindow({
       ...options,
-      icon: path.join(__dirname, '../app_icon.ico'),
+      icon: iconPath,
       webPreferences: {
         preload: path.join(__dirname, 'preload.mjs'),
         nodeIntegration: false,

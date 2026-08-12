@@ -12,6 +12,7 @@ import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Power, Trophy, Settings, ChevronDown, ChevronUp, Lock, Unlock, Minus, Square, X } from 'lucide-react';
+import appIcon from './assets/app_icon.ico';
 
 const getSliderFill = (val, min, max) => {
   const pct = ((val - min) / (max - min)) * 100;
@@ -203,7 +204,7 @@ function Dashboard() {
       {/* Titlebar */}
       <div className="flex justify-between items-center pl-3 h-8 select-none">
         <h1 className="text-sm font-semibold tracking-wide flex items-center gap-2 text-brand-10/90 pt-1">
-          <img src="/app_icon.ico" className="w-4 h-4 object-contain" alt="Logo" />
+          <img src={appIcon} className="w-4 h-4 object-contain" alt="Logo" />
           Cold Mirror
         </h1>
       </div>
