@@ -27,7 +27,7 @@ export function LiveInputs() {
       if (now - lastUpdateTime < 33) return;
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
 
       useAppStore.getState().setWidgetActive('inputs', latestData.Speed > 1);

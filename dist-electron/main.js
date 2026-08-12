@@ -1,402 +1,565 @@
-var yr = Object.defineProperty;
-var br = (n, r, i) => r in n ? yr(n, r, { enumerable: !0, configurable: !0, writable: !0, value: i }) : n[r] = i;
-var K = (n, r, i) => br(n, typeof r != "symbol" ? r + "" : r, i);
-import { ipcMain as Pe, BrowserWindow as va, app as xe } from "electron";
-import Ne from "path";
-import { fileURLToPath as Rr } from "url";
-import { error as La, warn as Pr, log as Ar } from "node:console";
-import { join as xr, dirname as kr } from "node:path";
-import { fileURLToPath as _r } from "node:url";
-import qe from "fs";
-import Mr from "os";
-import wr from "node:http";
-const Fr = Rr(import.meta.url), Ke = Ne.dirname(Fr);
-class Or {
-  constructor(r) {
-    this.windows = /* @__PURE__ */ new Map(), this.store = r, this.setupIpc();
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { ipcMain, BrowserWindow, app } from "electron";
+import path from "path";
+import { fileURLToPath } from "url";
+import { error, warn, log } from "node:console";
+import { join, dirname } from "node:path";
+import { fileURLToPath as fileURLToPath$1 } from "node:url";
+import fs from "fs";
+import require$$2 from "os";
+import http from "node:http";
+const __filename$1 = fileURLToPath(import.meta.url);
+const __dirname$1 = path.dirname(__filename$1);
+class WindowManager {
+  constructor(store) {
+    this.windows = /* @__PURE__ */ new Map();
+    this.store = store;
+    this.boundsTimeout = /* @__PURE__ */ new Map();
+    this.setupIpc();
   }
   setupIpc() {
-    Pe.on("set-ignore-mouse-events", (r, i, d) => {
-      const t = va.fromWebContents(r.sender);
-      t && t.setIgnoreMouseEvents(i, d);
-    }), Pe.on("window-action", (r, { windowId: i, action: d, payload: t }) => {
-      const u = this.windows.get(i);
-      if (u)
-        switch (d) {
-          case "close":
-            if (i.startsWith("overlay-")) {
-              const p = i.replace("overlay-", "");
-              this.toggleOverlay(p, !1);
-            } else
-              u.close();
-            break;
-          case "minimize":
-            u.minimize();
-            break;
-          case "maximize":
-            u.isMaximized() ? u.unmaximize() : u.maximize();
-            break;
-          case "move":
-            u.setPosition(t.x, t.y);
-            break;
-          case "resize":
-            if (u.setSize(t.width, t.height), i.startsWith("overlay-")) {
-              const p = i.replace("overlay-", ""), m = this.store.get("overlays") || {};
-              m[p] && (m[p].width = t.width, m[p].height = t.height, this.store.set("overlays", m));
-            }
-            break;
-        }
-    }), Pe.handle("get-settings", () => this.store.getAll()), Pe.on("update-overlay-setting", (r, { id: i, settings: d }) => {
-      const t = this.store.get("overlays") || {};
-      t[i] = { ...t[i], ...d }, this.store.set("overlays", t);
-      const u = this.windows.get(`overlay-${i}`);
-      u && d.clickThrough !== void 0 && u.setIgnoreMouseEvents(d.clickThrough, { forward: !0 }), this.broadcast("settings-updated", this.store.getAll());
-    }), Pe.on("toggle-overlay", (r, i, d) => {
-      this.toggleOverlay(i, d);
+    ipcMain.on("set-ignore-mouse-events", (event, ignore, options) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win) {
+        win.setIgnoreMouseEvents(ignore, options);
+      }
+    });
+    ipcMain.on("window-action", (event, { windowId, action, payload }) => {
+      const win = this.windows.get(windowId);
+      if (!win) return;
+      switch (action) {
+        case "close":
+          if (windowId.startsWith("overlay-")) {
+            const id = windowId.replace("overlay-", "");
+            this.toggleOverlay(id, false);
+          } else {
+            win.close();
+          }
+          break;
+        case "minimize":
+          win.minimize();
+          break;
+        case "maximize":
+          if (win.isMaximized()) {
+            win.unmaximize();
+          } else {
+            win.maximize();
+          }
+          break;
+        case "move":
+          win.setPosition(payload.x, payload.y);
+          break;
+        case "resize":
+          win.setSize(payload.width, payload.height);
+          this.saveBounds(windowId, win);
+          break;
+      }
+    });
+    ipcMain.handle("get-settings", () => {
+      return this.store.getAll();
+    });
+    ipcMain.on("update-overlay-setting", (event, { id, settings }) => {
+      const overlays = this.store.get("overlays") || {};
+      overlays[id] = { ...overlays[id], ...settings };
+      this.store.set("overlays", overlays);
+      const win = this.windows.get(`overlay-${id}`);
+      if (win && settings.clickThrough !== void 0) {
+        win.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
+      }
+      this.broadcast("settings-updated", this.store.getAll());
+    });
+    ipcMain.on("toggle-overlay", (event, id, state) => {
+      this.toggleOverlay(id, state);
     });
   }
-  toggleOverlay(r, i) {
-    const d = this.store.get("overlays") || {};
-    d[r] || (d[r] = {});
-    const t = i !== void 0 ? i : !d[r].enabled;
-    if (d[r].enabled = t, this.store.set("overlays", d), t)
-      this.createOverlay(r, d[r]);
-    else {
-      const u = this.windows.get(`overlay-${r}`);
-      u && !u.isDestroyed() && u.close();
+  toggleOverlay(id, state) {
+    const overlays = this.store.get("overlays") || {};
+    if (!overlays[id]) overlays[id] = {};
+    const newState = state !== void 0 ? state : !overlays[id].enabled;
+    overlays[id].enabled = newState;
+    this.store.set("overlays", overlays);
+    if (newState) {
+      this.createOverlay(id, overlays[id]);
+    } else {
+      const win = this.windows.get(`overlay-${id}`);
+      if (win && !win.isDestroyed()) {
+        win.close();
+      }
     }
     this.broadcast("settings-updated", this.store.getAll());
   }
-  createWindow(r, i = {}, d = {}) {
-    if (this.windows.has(r))
-      return this.windows.get(r).focus(), this.windows.get(r);
-    const t = new va({
-      ...i,
-      icon: Ne.join(Ke, "../app_icon.ico"),
+  createWindow(id, options = {}, queryParams = {}) {
+    if (this.windows.has(id)) {
+      this.windows.get(id).focus();
+      return this.windows.get(id);
+    }
+    const win = new BrowserWindow({
+      ...options,
+      icon: path.join(__dirname$1, "../app_icon.ico"),
       webPreferences: {
-        preload: Ne.join(Ke, "preload.mjs"),
-        nodeIntegration: !1,
-        contextIsolation: !0,
-        ...i.webPreferences
+        preload: path.join(__dirname$1, "preload.mjs"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        ...options.webPreferences
       }
-    }), u = new URLSearchParams(d).toString();
-    return process.env.VITE_DEV_SERVER_URL ? t.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${u}`) : t.loadFile(Ne.join(Ke, "../dist/index.html"), { query: d }), t.on("resized", () => this.saveBounds(r, t)), t.on("moved", () => this.saveBounds(r, t)), t.on("maximize", () => t.webContents.send("maximize-state", !0)), t.on("unmaximize", () => t.webContents.send("maximize-state", !1)), t.on("closed", () => {
-      this.windows.delete(r);
-    }), this.windows.set(r, t), t;
+    });
+    const queryString = new URLSearchParams(queryParams).toString();
+    if (process.env.VITE_DEV_SERVER_URL) {
+      win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${queryString}`);
+    } else {
+      win.loadFile(path.join(__dirname$1, "../dist/index.html"), { query: queryParams });
+    }
+    win.on("resized", () => this.saveBounds(id, win));
+    win.on("moved", () => this.saveBounds(id, win));
+    win.on("maximize", () => win.webContents.send("maximize-state", true));
+    win.on("unmaximize", () => win.webContents.send("maximize-state", false));
+    win.on("closed", () => {
+      this.windows.delete(id);
+    });
+    this.windows.set(id, win);
+    return win;
   }
-  saveBounds(r, i) {
-    if (!r.startsWith("overlay-")) return;
-    const d = r.replace("overlay-", ""), t = i.getBounds(), u = this.store.get("overlays") || {};
-    u[d] && (u[d].x = t.x, u[d].y = t.y, u[d].width = t.width, u[d].height = t.height, this.store.set("overlays", u));
+  saveBounds(id, win) {
+    if (!id.startsWith("overlay-")) return;
+    if (this.boundsTimeout.has(id)) {
+      clearTimeout(this.boundsTimeout.get(id));
+    }
+    this.boundsTimeout.set(id, setTimeout(() => {
+      if (win.isDestroyed()) return;
+      const overlayId = id.replace("overlay-", "");
+      const bounds = win.getBounds();
+      const overlays = this.store.get("overlays") || {};
+      if (overlays[overlayId]) {
+        overlays[overlayId].x = bounds.x;
+        overlays[overlayId].y = bounds.y;
+        overlays[overlayId].width = bounds.width;
+        overlays[overlayId].height = bounds.height;
+        this.store.set("overlays", overlays);
+      }
+    }, 300));
   }
   createDashboard() {
     return this.createWindow("dashboard", {
       width: 900,
       height: 650,
-      frame: !1,
-      transparent: !0,
-      hasShadow: !1
+      frame: false,
+      transparent: true,
+      hasShadow: false
     }, { window: "dashboard" });
   }
-  createOverlay(r, i = {}) {
-    const d = {
-      inputs: 300,
-      radar: 100,
-      trackmap: 400,
-      weather: 420,
-      pit: 380,
-      dash: 400
-    }, t = {
-      inputs: 120,
-      radar: 150,
-      trackmap: 80,
-      weather: 60,
-      pit: 100,
-      dash: 200
-    }, u = this.createWindow(`overlay-${r}`, {
-      width: i.width || (r === "trackmap" ? 800 : r === "weather" || r === "pit" ? 420 : r === "dash" ? 600 : 400),
-      height: i.height || (r === "trackmap" || r === "weather" ? 80 : r === "pit" ? 140 : r === "dash" ? 300 : 600),
-      minWidth: d[r] || 150,
-      minHeight: t[r] || 150,
-      x: i.x,
-      y: i.y,
-      frame: !1,
-      transparent: !0,
-      alwaysOnTop: !0,
-      hasShadow: !1,
-      skipTaskbar: !0
-    }, { window: "overlay", type: r, id: `overlay-${r}` });
-    return i.clickThrough && u.setIgnoreMouseEvents(!0, { forward: !0 }), u;
+  createOverlay(overlayId, savedSettings = {}) {
+    const minWidths = {
+      "inputs": 300,
+      "radar": 100,
+      "trackmap": 400,
+      "weather": 420,
+      "pit": 380,
+      "dash": 400
+    };
+    const minHeights = {
+      "inputs": 120,
+      "radar": 150,
+      "trackmap": 80,
+      "weather": 60,
+      "pit": 100,
+      "dash": 200
+    };
+    const win = this.createWindow(`overlay-${overlayId}`, {
+      width: savedSettings.width || (overlayId === "trackmap" ? 800 : overlayId === "weather" ? 420 : overlayId === "pit" ? 420 : overlayId === "dash" ? 600 : 400),
+      height: savedSettings.height || (overlayId === "trackmap" ? 80 : overlayId === "weather" ? 80 : overlayId === "pit" ? 140 : overlayId === "dash" ? 300 : 600),
+      minWidth: minWidths[overlayId] || 150,
+      minHeight: minHeights[overlayId] || 150,
+      x: savedSettings.x,
+      y: savedSettings.y,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      skipTaskbar: true
+    }, { window: "overlay", type: overlayId, id: `overlay-${overlayId}` });
+    if (savedSettings.clickThrough) {
+      win.setIgnoreMouseEvents(true, { forward: true });
+    }
+    return win;
   }
   getAllWindows() {
     return Array.from(this.windows.values());
   }
-  broadcast(r, i) {
-    this.windows.forEach((d) => {
-      d.isDestroyed() || d.webContents.send(r, i);
+  broadcast(channel, data) {
+    this.windows.forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(channel, data);
+      }
     });
   }
 }
-function Er(n) {
-  return n && n.__esModule && Object.prototype.hasOwnProperty.call(n, "default") ? n.default : n;
+function getDefaultExportFromCjs$1(x) {
+  return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
-function ar(n) {
-  throw new Error('Could not dynamically require "' + n + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
+function commonjsRequire(path2) {
+  throw new Error('Could not dynamically require "' + path2 + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
 }
-var Xe = { exports: {} }, $e, ba;
-function Ur() {
-  if (ba) return $e;
-  ba = 1;
-  var n = qe, r = Ne, i = Mr, d = typeof __webpack_require__ == "function" ? __non_webpack_require__ : ar, t = process.config && process.config.variables || {}, u = !!process.env.PREBUILDS_ONLY, p = process.versions.modules, m = ee() ? "electron" : oe() ? "node-webkit" : "node", N = process.env.npm_config_arch || i.arch(), o = process.env.npm_config_platform || i.platform(), c = process.env.LIBC || (ge(o) ? "musl" : "glibc"), D = process.env.ARM_VERSION || (N === "arm64" ? "8" : t.arm_version) || "", A = (process.versions.uv || "").split(".")[0];
-  $e = k;
-  function k(M) {
-    return d(k.resolve(M));
+var nodeGypBuild$1 = { exports: {} };
+var nodeGypBuild;
+var hasRequiredNodeGypBuild$1;
+function requireNodeGypBuild$1() {
+  if (hasRequiredNodeGypBuild$1) return nodeGypBuild;
+  hasRequiredNodeGypBuild$1 = 1;
+  var fs$1 = fs;
+  var path$1 = path;
+  var os = require$$2;
+  var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : commonjsRequire;
+  var vars = process.config && process.config.variables || {};
+  var prebuildsOnly = !!process.env.PREBUILDS_ONLY;
+  var abi = process.versions.modules;
+  var runtime = isElectron() ? "electron" : isNwjs() ? "node-webkit" : "node";
+  var arch = process.env.npm_config_arch || os.arch();
+  var platform = process.env.npm_config_platform || os.platform();
+  var libc = process.env.LIBC || (isAlpine(platform) ? "musl" : "glibc");
+  var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
+  var uv = (process.versions.uv || "").split(".")[0];
+  nodeGypBuild = load2;
+  function load2(dir) {
+    return runtimeRequire(load2.resolve(dir));
   }
-  k.resolve = k.path = function(M) {
-    M = r.resolve(M || ".");
+  load2.resolve = load2.path = function(dir) {
+    dir = path$1.resolve(dir || ".");
     try {
-      var E = d(r.join(M, "package.json")).name.toUpperCase().replace(/-/g, "_");
-      process.env[E + "_PREBUILD"] && (M = process.env[E + "_PREBUILD"]);
-    } catch {
+      var name = runtimeRequire(path$1.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
+      if (process.env[name + "_PREBUILD"]) dir = process.env[name + "_PREBUILD"];
+    } catch (err) {
     }
-    if (!u) {
-      var w = _(r.join(M, "build/Release"), q);
-      if (w) return w;
-      var O = _(r.join(M, "build/Debug"), q);
-      if (O) return O;
+    if (!prebuildsOnly) {
+      var release = getFirst(path$1.join(dir, "build/Release"), matchBuild);
+      if (release) return release;
+      var debug = getFirst(path$1.join(dir, "build/Debug"), matchBuild);
+      if (debug) return debug;
     }
-    var Z = Q(M);
-    if (Z) return Z;
-    var y = Q(r.dirname(process.execPath));
-    if (y) return y;
-    var ue = [
-      "platform=" + o,
-      "arch=" + N,
-      "runtime=" + m,
-      "abi=" + p,
-      "uv=" + A,
-      D ? "armv=" + D : "",
-      "libc=" + c,
+    var prebuild = resolve(dir);
+    if (prebuild) return prebuild;
+    var nearby = resolve(path$1.dirname(process.execPath));
+    if (nearby) return nearby;
+    var target = [
+      "platform=" + platform,
+      "arch=" + arch,
+      "runtime=" + runtime,
+      "abi=" + abi,
+      "uv=" + uv,
+      armv ? "armv=" + armv : "",
+      "libc=" + libc,
       "node=" + process.versions.node,
       process.versions.electron ? "electron=" + process.versions.electron : "",
-      typeof __webpack_require__ == "function" ? "webpack=true" : ""
+      typeof __webpack_require__ === "function" ? "webpack=true" : ""
       // eslint-disable-line
     ].filter(Boolean).join(" ");
-    throw new Error("No native build was found for " + ue + `
-    loaded from: ` + M + `
-`);
-    function Q(de) {
-      var ae = j(r.join(de, "prebuilds")).map(G), Se = ae.filter(H(o, N)).sort(W)[0];
-      if (Se) {
-        var ce = r.join(de, "prebuilds", Se.name), Ce = j(ce).map(X), ve = Ce.filter($(m, p)), z = ve.sort(le(m))[0];
-        if (z) return r.join(ce, z.file);
-      }
+    throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
+    function resolve(dir2) {
+      var tuples = readdirSync(path$1.join(dir2, "prebuilds")).map(parseTuple);
+      var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
+      if (!tuple) return;
+      var prebuilds = path$1.join(dir2, "prebuilds", tuple.name);
+      var parsed = readdirSync(prebuilds).map(parseTags);
+      var candidates = parsed.filter(matchTags(runtime, abi));
+      var winner = candidates.sort(compareTags(runtime))[0];
+      if (winner) return path$1.join(prebuilds, winner.file);
     }
   };
-  function j(M) {
+  function readdirSync(dir) {
     try {
-      return n.readdirSync(M);
-    } catch {
+      return fs$1.readdirSync(dir);
+    } catch (err) {
       return [];
     }
   }
-  function _(M, E) {
-    var w = j(M).filter(E);
-    return w[0] && r.join(M, w[0]);
+  function getFirst(dir, filter) {
+    var files = readdirSync(dir).filter(filter);
+    return files[0] && path$1.join(dir, files[0]);
   }
-  function q(M) {
-    return /\.node$/.test(M);
+  function matchBuild(name) {
+    return /\.node$/.test(name);
   }
-  function G(M) {
-    var E = M.split("-");
-    if (E.length === 2) {
-      var w = E[0], O = E[1].split("+");
-      if (w && O.length && O.every(Boolean))
-        return { name: M, platform: w, architectures: O };
-    }
+  function parseTuple(name) {
+    var arr = name.split("-");
+    if (arr.length !== 2) return;
+    var platform2 = arr[0];
+    var architectures = arr[1].split("+");
+    if (!platform2) return;
+    if (!architectures.length) return;
+    if (!architectures.every(Boolean)) return;
+    return { name, platform: platform2, architectures };
   }
-  function H(M, E) {
-    return function(w) {
-      return w == null || w.platform !== M ? !1 : w.architectures.includes(E);
+  function matchTuple(platform2, arch2) {
+    return function(tuple) {
+      if (tuple == null) return false;
+      if (tuple.platform !== platform2) return false;
+      return tuple.architectures.includes(arch2);
     };
   }
-  function W(M, E) {
-    return M.architectures.length - E.architectures.length;
+  function compareTuples(a, b) {
+    return a.architectures.length - b.architectures.length;
   }
-  function X(M) {
-    var E = M.split("."), w = E.pop(), O = { file: M, specificity: 0 };
-    if (w === "node") {
-      for (var Z = 0; Z < E.length; Z++) {
-        var y = E[Z];
-        if (y === "node" || y === "electron" || y === "node-webkit")
-          O.runtime = y;
-        else if (y === "napi")
-          O.napi = !0;
-        else if (y.slice(0, 3) === "abi")
-          O.abi = y.slice(3);
-        else if (y.slice(0, 2) === "uv")
-          O.uv = y.slice(2);
-        else if (y.slice(0, 4) === "armv")
-          O.armv = y.slice(4);
-        else if (y === "glibc" || y === "musl")
-          O.libc = y;
-        else
-          continue;
-        O.specificity++;
+  function parseTags(file) {
+    var arr = file.split(".");
+    var extension = arr.pop();
+    var tags = { file, specificity: 0 };
+    if (extension !== "node") return;
+    for (var i = 0; i < arr.length; i++) {
+      var tag = arr[i];
+      if (tag === "node" || tag === "electron" || tag === "node-webkit") {
+        tags.runtime = tag;
+      } else if (tag === "napi") {
+        tags.napi = true;
+      } else if (tag.slice(0, 3) === "abi") {
+        tags.abi = tag.slice(3);
+      } else if (tag.slice(0, 2) === "uv") {
+        tags.uv = tag.slice(2);
+      } else if (tag.slice(0, 4) === "armv") {
+        tags.armv = tag.slice(4);
+      } else if (tag === "glibc" || tag === "musl") {
+        tags.libc = tag;
+      } else {
+        continue;
       }
-      return O;
+      tags.specificity++;
     }
+    return tags;
   }
-  function $(M, E) {
-    return function(w) {
-      return !(w == null || w.runtime && w.runtime !== M && !pe(w) || w.abi && w.abi !== E && !w.napi || w.uv && w.uv !== A || w.armv && w.armv !== D || w.libc && w.libc !== c);
+  function matchTags(runtime2, abi2) {
+    return function(tags) {
+      if (tags == null) return false;
+      if (tags.runtime && tags.runtime !== runtime2 && !runtimeAgnostic(tags)) return false;
+      if (tags.abi && tags.abi !== abi2 && !tags.napi) return false;
+      if (tags.uv && tags.uv !== uv) return false;
+      if (tags.armv && tags.armv !== armv) return false;
+      if (tags.libc && tags.libc !== libc) return false;
+      return true;
     };
   }
-  function pe(M) {
-    return M.runtime === "node" && M.napi;
+  function runtimeAgnostic(tags) {
+    return tags.runtime === "node" && tags.napi;
   }
-  function le(M) {
-    return function(E, w) {
-      return E.runtime !== w.runtime ? E.runtime === M ? -1 : 1 : E.abi !== w.abi ? E.abi ? -1 : 1 : E.specificity !== w.specificity ? E.specificity > w.specificity ? -1 : 1 : 0;
+  function compareTags(runtime2) {
+    return function(a, b) {
+      if (a.runtime !== b.runtime) {
+        return a.runtime === runtime2 ? -1 : 1;
+      } else if (a.abi !== b.abi) {
+        return a.abi ? -1 : 1;
+      } else if (a.specificity !== b.specificity) {
+        return a.specificity > b.specificity ? -1 : 1;
+      } else {
+        return 0;
+      }
     };
   }
-  function oe() {
+  function isNwjs() {
     return !!(process.versions && process.versions.nw);
   }
-  function ee() {
-    return process.versions && process.versions.electron || process.env.ELECTRON_RUN_AS_NODE ? !0 : typeof window < "u" && window.process && window.process.type === "renderer";
+  function isElectron() {
+    if (process.versions && process.versions.electron) return true;
+    if (process.env.ELECTRON_RUN_AS_NODE) return true;
+    return typeof window !== "undefined" && window.process && window.process.type === "renderer";
   }
-  function ge(M) {
-    return M === "linux" && n.existsSync("/etc/alpine-release");
+  function isAlpine(platform2) {
+    return platform2 === "linux" && fs$1.existsSync("/etc/alpine-release");
   }
-  return k.parseTags = X, k.matchTags = $, k.compareTags = le, k.parseTuple = G, k.matchTuple = H, k.compareTuples = W, $e;
+  load2.parseTags = parseTags;
+  load2.matchTags = matchTags;
+  load2.compareTags = compareTags;
+  load2.parseTuple = parseTuple;
+  load2.matchTuple = matchTuple;
+  load2.compareTuples = compareTuples;
+  return nodeGypBuild;
 }
-var Ra;
-function Hr() {
-  if (Ra) return Xe.exports;
-  Ra = 1;
-  const n = typeof __webpack_require__ == "function" ? __non_webpack_require__ : ar;
-  return typeof n.addon == "function" ? Xe.exports = n.addon.bind(n) : Xe.exports = Ur(), Xe.exports;
+var hasRequiredNodeGypBuild;
+function requireNodeGypBuild() {
+  if (hasRequiredNodeGypBuild) return nodeGypBuild$1.exports;
+  hasRequiredNodeGypBuild = 1;
+  const runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : commonjsRequire;
+  if (typeof runtimeRequire.addon === "function") {
+    nodeGypBuild$1.exports = runtimeRequire.addon.bind(runtimeRequire);
+  } else {
+    nodeGypBuild$1.exports = requireNodeGypBuild$1();
+  }
+  return nodeGypBuild$1.exports;
 }
-var Vr = Hr();
-const Wr = /* @__PURE__ */ Er(Vr);
-function Xr(n) {
-  return n && n.__esModule && Object.prototype.hasOwnProperty.call(n, "default") ? n.default : n;
+var nodeGypBuildExports = requireNodeGypBuild();
+const importNativeModule = /* @__PURE__ */ getDefaultExportFromCjs$1(nodeGypBuildExports);
+function getDefaultExportFromCjs(x) {
+  return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
-var Y = {}, Be = {}, fe = {}, Pa;
-function ke() {
-  if (Pa) return fe;
-  Pa = 1;
-  function n(p) {
-    return typeof p > "u" || p === null;
+var jsYaml = {};
+var loader = {};
+var common = {};
+var hasRequiredCommon;
+function requireCommon() {
+  if (hasRequiredCommon) return common;
+  hasRequiredCommon = 1;
+  function isNothing(subject) {
+    return typeof subject === "undefined" || subject === null;
   }
-  function r(p) {
-    return typeof p == "object" && p !== null;
+  function isObject(subject) {
+    return typeof subject === "object" && subject !== null;
   }
-  function i(p) {
-    return Array.isArray(p) ? p : n(p) ? [] : [p];
+  function toArray(sequence) {
+    if (Array.isArray(sequence)) return sequence;
+    else if (isNothing(sequence)) return [];
+    return [sequence];
   }
-  function d(p, m) {
-    if (m) {
-      const N = Object.keys(m);
-      for (let o = 0, c = N.length; o < c; o += 1) {
-        const D = N[o];
-        p[D] = m[D];
+  function extend(target, source) {
+    if (source) {
+      const sourceKeys = Object.keys(source);
+      for (let index = 0, length = sourceKeys.length; index < length; index += 1) {
+        const key = sourceKeys[index];
+        target[key] = source[key];
       }
     }
-    return p;
+    return target;
   }
-  function t(p, m) {
-    let N = "";
-    for (let o = 0; o < m; o += 1)
-      N += p;
-    return N;
+  function repeat(string, count) {
+    let result = "";
+    for (let cycle = 0; cycle < count; cycle += 1) {
+      result += string;
+    }
+    return result;
   }
-  function u(p) {
-    return p === 0 && Number.NEGATIVE_INFINITY === 1 / p;
+  function isNegativeZero(number) {
+    return number === 0 && Number.NEGATIVE_INFINITY === 1 / number;
   }
-  return fe.isNothing = n, fe.isObject = r, fe.toArray = i, fe.repeat = t, fe.isNegativeZero = u, fe.extend = d, fe;
+  common.isNothing = isNothing;
+  common.isObject = isObject;
+  common.toArray = toArray;
+  common.repeat = repeat;
+  common.isNegativeZero = isNegativeZero;
+  common.extend = extend;
+  return common;
 }
-var Qe, Aa;
-function _e() {
-  if (Aa) return Qe;
-  Aa = 1;
-  function n(i, d) {
-    let t = "";
-    const u = i.reason || "(unknown reason)";
-    return i.mark ? (i.mark.name && (t += 'in "' + i.mark.name + '" '), t += "(" + (i.mark.line + 1) + ":" + (i.mark.column + 1) + ")", !d && i.mark.snippet && (t += `
-
-` + i.mark.snippet), u + " " + t) : u;
+var exception;
+var hasRequiredException;
+function requireException() {
+  if (hasRequiredException) return exception;
+  hasRequiredException = 1;
+  function formatError(exception2, compact) {
+    let where = "";
+    const message = exception2.reason || "(unknown reason)";
+    if (!exception2.mark) return message;
+    if (exception2.mark.name) {
+      where += 'in "' + exception2.mark.name + '" ';
+    }
+    where += "(" + (exception2.mark.line + 1) + ":" + (exception2.mark.column + 1) + ")";
+    if (!compact && exception2.mark.snippet) {
+      where += "\n\n" + exception2.mark.snippet;
+    }
+    return message + " " + where;
   }
-  function r(i, d) {
-    Error.call(this), this.name = "YAMLException", this.reason = i, this.mark = d, this.message = n(this, !1), Error.captureStackTrace ? Error.captureStackTrace(this, this.constructor) : this.stack = new Error().stack || "";
+  function YAMLException2(reason, mark) {
+    Error.call(this);
+    this.name = "YAMLException";
+    this.reason = reason;
+    this.mark = mark;
+    this.message = formatError(this, false);
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    } else {
+      this.stack = new Error().stack || "";
+    }
   }
-  return r.prototype = Object.create(Error.prototype), r.prototype.constructor = r, r.prototype.toString = function(d) {
-    return this.name + ": " + n(this, d);
-  }, Qe = r, Qe;
+  YAMLException2.prototype = Object.create(Error.prototype);
+  YAMLException2.prototype.constructor = YAMLException2;
+  YAMLException2.prototype.toString = function toString(compact) {
+    return this.name + ": " + formatError(this, compact);
+  };
+  exception = YAMLException2;
+  return exception;
 }
-var Ze, xa;
-function Br() {
-  if (xa) return Ze;
-  xa = 1;
-  const n = ke();
-  function r(t, u, p, m, N) {
-    let o = "", c = "";
-    const D = Math.floor(N / 2) - 1;
-    return m - u > D && (o = " ... ", u = m - D + o.length), p - m > D && (c = " ...", p = m + D - c.length), {
-      str: o + t.slice(u, p).replace(/\t/g, "→") + c,
-      pos: m - u + o.length
+var snippet;
+var hasRequiredSnippet;
+function requireSnippet() {
+  if (hasRequiredSnippet) return snippet;
+  hasRequiredSnippet = 1;
+  const common2 = requireCommon();
+  function getLine(buffer, lineStart, lineEnd, position, maxLineLength) {
+    let head = "";
+    let tail = "";
+    const maxHalfLength = Math.floor(maxLineLength / 2) - 1;
+    if (position - lineStart > maxHalfLength) {
+      head = " ... ";
+      lineStart = position - maxHalfLength + head.length;
+    }
+    if (lineEnd - position > maxHalfLength) {
+      tail = " ...";
+      lineEnd = position + maxHalfLength - tail.length;
+    }
+    return {
+      str: head + buffer.slice(lineStart, lineEnd).replace(/\t/g, "→") + tail,
+      pos: position - lineStart + head.length
       // relative position
     };
   }
-  function i(t, u) {
-    return n.repeat(" ", u - t.length) + t;
+  function padStart(string, max) {
+    return common2.repeat(" ", max - string.length) + string;
   }
-  function d(t, u) {
-    if (u = Object.create(u || null), !t.buffer) return null;
-    u.maxLength || (u.maxLength = 79), typeof u.indent != "number" && (u.indent = 1), typeof u.linesBefore != "number" && (u.linesBefore = 3), typeof u.linesAfter != "number" && (u.linesAfter = 2);
-    const p = /\r?\n|\r|\0/g, m = [0], N = [];
-    let o, c = -1;
-    for (; o = p.exec(t.buffer); )
-      N.push(o.index), m.push(o.index + o[0].length), t.position <= o.index && c < 0 && (c = m.length - 2);
-    c < 0 && (c = m.length - 1);
-    let D = "";
-    const A = Math.min(t.line + u.linesAfter, N.length).toString().length, k = u.maxLength - (u.indent + A + 3);
-    for (let _ = 1; _ <= u.linesBefore && !(c - _ < 0); _++) {
-      const q = r(
-        t.buffer,
-        m[c - _],
-        N[c - _],
-        t.position - (m[c] - m[c - _]),
-        k
-      );
-      D = n.repeat(" ", u.indent) + i((t.line - _ + 1).toString(), A) + " | " + q.str + `
-` + D;
+  function makeSnippet(mark, options) {
+    options = Object.create(options || null);
+    if (!mark.buffer) return null;
+    if (!options.maxLength) options.maxLength = 79;
+    if (typeof options.indent !== "number") options.indent = 1;
+    if (typeof options.linesBefore !== "number") options.linesBefore = 3;
+    if (typeof options.linesAfter !== "number") options.linesAfter = 2;
+    const re = /\r?\n|\r|\0/g;
+    const lineStarts = [0];
+    const lineEnds = [];
+    let match;
+    let foundLineNo = -1;
+    while (match = re.exec(mark.buffer)) {
+      lineEnds.push(match.index);
+      lineStarts.push(match.index + match[0].length);
+      if (mark.position <= match.index && foundLineNo < 0) {
+        foundLineNo = lineStarts.length - 2;
+      }
     }
-    const j = r(t.buffer, m[c], N[c], t.position, k);
-    D += n.repeat(" ", u.indent) + i((t.line + 1).toString(), A) + " | " + j.str + `
-`, D += n.repeat("-", u.indent + A + 3 + j.pos) + `^
-`;
-    for (let _ = 1; _ <= u.linesAfter && !(c + _ >= N.length); _++) {
-      const q = r(
-        t.buffer,
-        m[c + _],
-        N[c + _],
-        t.position - (m[c] - m[c + _]),
-        k
+    if (foundLineNo < 0) foundLineNo = lineStarts.length - 1;
+    let result = "";
+    const lineNoLength = Math.min(mark.line + options.linesAfter, lineEnds.length).toString().length;
+    const maxLineLength = options.maxLength - (options.indent + lineNoLength + 3);
+    for (let i = 1; i <= options.linesBefore; i++) {
+      if (foundLineNo - i < 0) break;
+      const line2 = getLine(
+        mark.buffer,
+        lineStarts[foundLineNo - i],
+        lineEnds[foundLineNo - i],
+        mark.position - (lineStarts[foundLineNo] - lineStarts[foundLineNo - i]),
+        maxLineLength
       );
-      D += n.repeat(" ", u.indent) + i((t.line + _ + 1).toString(), A) + " | " + q.str + `
-`;
+      result = common2.repeat(" ", options.indent) + padStart((mark.line - i + 1).toString(), lineNoLength) + " | " + line2.str + "\n" + result;
     }
-    return D.replace(/\n$/, "");
+    const line = getLine(mark.buffer, lineStarts[foundLineNo], lineEnds[foundLineNo], mark.position, maxLineLength);
+    result += common2.repeat(" ", options.indent) + padStart((mark.line + 1).toString(), lineNoLength) + " | " + line.str + "\n";
+    result += common2.repeat("-", options.indent + lineNoLength + 3 + line.pos) + "^\n";
+    for (let i = 1; i <= options.linesAfter; i++) {
+      if (foundLineNo + i >= lineEnds.length) break;
+      const line2 = getLine(
+        mark.buffer,
+        lineStarts[foundLineNo + i],
+        lineEnds[foundLineNo + i],
+        mark.position - (lineStarts[foundLineNo] - lineStarts[foundLineNo + i]),
+        maxLineLength
+      );
+      result += common2.repeat(" ", options.indent) + padStart((mark.line + i + 1).toString(), lineNoLength) + " | " + line2.str + "\n";
+    }
+    return result.replace(/\n$/, "");
   }
-  return Ze = d, Ze;
+  snippet = makeSnippet;
+  return snippet;
 }
-var ea, ka;
-function J() {
-  if (ka) return ea;
-  ka = 1;
-  const n = _e(), r = [
+var type;
+var hasRequiredType;
+function requireType() {
+  if (hasRequiredType) return type;
+  hasRequiredType = 1;
+  const YAMLException2 = requireException();
+  const TYPE_CONSTRUCTOR_OPTIONS = [
     "kind",
     "multi",
     "resolve",
@@ -407,48 +570,75 @@ function J() {
     "representName",
     "defaultStyle",
     "styleAliases"
-  ], i = [
+  ];
+  const YAML_NODE_KINDS = [
     "scalar",
     "sequence",
     "mapping"
   ];
-  function d(u) {
-    const p = {};
-    return u !== null && Object.keys(u).forEach(function(m) {
-      u[m].forEach(function(N) {
-        p[String(N)] = m;
+  function compileStyleAliases(map2) {
+    const result = {};
+    if (map2 !== null) {
+      Object.keys(map2).forEach(function(style) {
+        map2[style].forEach(function(alias) {
+          result[String(alias)] = style;
+        });
       });
-    }), p;
+    }
+    return result;
   }
-  function t(u, p) {
-    if (p = p || {}, Object.keys(p).forEach(function(m) {
-      if (r.indexOf(m) === -1)
-        throw new n('Unknown option "' + m + '" is met in definition of "' + u + '" YAML type.');
-    }), this.options = p, this.tag = u, this.kind = p.kind || null, this.resolve = p.resolve || function() {
-      return !0;
-    }, this.construct = p.construct || function(m) {
-      return m;
-    }, this.instanceOf = p.instanceOf || null, this.predicate = p.predicate || null, this.represent = p.represent || null, this.representName = p.representName || null, this.defaultStyle = p.defaultStyle || null, this.multi = p.multi || !1, this.styleAliases = d(p.styleAliases || null), i.indexOf(this.kind) === -1)
-      throw new n('Unknown kind "' + this.kind + '" is specified for "' + u + '" YAML type.');
+  function Type2(tag, options) {
+    options = options || {};
+    Object.keys(options).forEach(function(name) {
+      if (TYPE_CONSTRUCTOR_OPTIONS.indexOf(name) === -1) {
+        throw new YAMLException2('Unknown option "' + name + '" is met in definition of "' + tag + '" YAML type.');
+      }
+    });
+    this.options = options;
+    this.tag = tag;
+    this.kind = options["kind"] || null;
+    this.resolve = options["resolve"] || function() {
+      return true;
+    };
+    this.construct = options["construct"] || function(data) {
+      return data;
+    };
+    this.instanceOf = options["instanceOf"] || null;
+    this.predicate = options["predicate"] || null;
+    this.represent = options["represent"] || null;
+    this.representName = options["representName"] || null;
+    this.defaultStyle = options["defaultStyle"] || null;
+    this.multi = options["multi"] || false;
+    this.styleAliases = compileStyleAliases(options["styleAliases"] || null);
+    if (YAML_NODE_KINDS.indexOf(this.kind) === -1) {
+      throw new YAMLException2('Unknown kind "' + this.kind + '" is specified for "' + tag + '" YAML type.');
+    }
   }
-  return ea = t, ea;
+  type = Type2;
+  return type;
 }
-var aa, _a;
-function rr() {
-  if (_a) return aa;
-  _a = 1;
-  const n = _e(), r = J();
-  function i(u, p) {
-    const m = [];
-    return u[p].forEach(function(N) {
-      let o = m.length;
-      m.forEach(function(c, D) {
-        c.tag === N.tag && c.kind === N.kind && c.multi === N.multi && (o = D);
-      }), m[o] = N;
-    }), m;
+var schema;
+var hasRequiredSchema;
+function requireSchema() {
+  if (hasRequiredSchema) return schema;
+  hasRequiredSchema = 1;
+  const YAMLException2 = requireException();
+  const Type2 = requireType();
+  function compileList(schema2, name) {
+    const result = [];
+    schema2[name].forEach(function(currentType) {
+      let newIndex = result.length;
+      result.forEach(function(previousType, previousIndex) {
+        if (previousType.tag === currentType.tag && previousType.kind === currentType.kind && previousType.multi === currentType.multi) {
+          newIndex = previousIndex;
+        }
+      });
+      result[newIndex] = currentType;
+    });
+    return result;
   }
-  function d() {
-    const u = {
+  function compileMap() {
+    const result = {
       scalar: {},
       sequence: {},
       mapping: {},
@@ -460,111 +650,141 @@ function rr() {
         fallback: []
       }
     };
-    function p(m) {
-      m.multi ? (u.multi[m.kind].push(m), u.multi.fallback.push(m)) : u[m.kind][m.tag] = u.fallback[m.tag] = m;
+    function collectType(type2) {
+      if (type2.multi) {
+        result.multi[type2.kind].push(type2);
+        result.multi["fallback"].push(type2);
+      } else {
+        result[type2.kind][type2.tag] = result["fallback"][type2.tag] = type2;
+      }
     }
-    for (let m = 0, N = arguments.length; m < N; m += 1)
-      arguments[m].forEach(p);
-    return u;
+    for (let index = 0, length = arguments.length; index < length; index += 1) {
+      arguments[index].forEach(collectType);
+    }
+    return result;
   }
-  function t(u) {
-    return this.extend(u);
+  function Schema2(definition) {
+    return this.extend(definition);
   }
-  return t.prototype.extend = function(p) {
-    let m = [], N = [];
-    if (p instanceof r)
-      N.push(p);
-    else if (Array.isArray(p))
-      N = N.concat(p);
-    else if (p && (Array.isArray(p.implicit) || Array.isArray(p.explicit)))
-      p.implicit && (m = m.concat(p.implicit)), p.explicit && (N = N.concat(p.explicit));
-    else
-      throw new n("Schema.extend argument should be a Type, [ Type ], or a schema definition ({ implicit: [...], explicit: [...] })");
-    m.forEach(function(c) {
-      if (!(c instanceof r))
-        throw new n("Specified list of YAML types (or a single Type object) contains a non-Type object.");
-      if (c.loadKind && c.loadKind !== "scalar")
-        throw new n("There is a non-scalar type in the implicit list of a schema. Implicit resolving of such types is not supported.");
-      if (c.multi)
-        throw new n("There is a multi type in the implicit list of a schema. Multi tags can only be listed as explicit.");
-    }), N.forEach(function(c) {
-      if (!(c instanceof r))
-        throw new n("Specified list of YAML types (or a single Type object) contains a non-Type object.");
+  Schema2.prototype.extend = function extend(definition) {
+    let implicit = [];
+    let explicit = [];
+    if (definition instanceof Type2) {
+      explicit.push(definition);
+    } else if (Array.isArray(definition)) {
+      explicit = explicit.concat(definition);
+    } else if (definition && (Array.isArray(definition.implicit) || Array.isArray(definition.explicit))) {
+      if (definition.implicit) implicit = implicit.concat(definition.implicit);
+      if (definition.explicit) explicit = explicit.concat(definition.explicit);
+    } else {
+      throw new YAMLException2("Schema.extend argument should be a Type, [ Type ], or a schema definition ({ implicit: [...], explicit: [...] })");
+    }
+    implicit.forEach(function(type2) {
+      if (!(type2 instanceof Type2)) {
+        throw new YAMLException2("Specified list of YAML types (or a single Type object) contains a non-Type object.");
+      }
+      if (type2.loadKind && type2.loadKind !== "scalar") {
+        throw new YAMLException2("There is a non-scalar type in the implicit list of a schema. Implicit resolving of such types is not supported.");
+      }
+      if (type2.multi) {
+        throw new YAMLException2("There is a multi type in the implicit list of a schema. Multi tags can only be listed as explicit.");
+      }
     });
-    const o = Object.create(t.prototype);
-    return o.implicit = (this.implicit || []).concat(m), o.explicit = (this.explicit || []).concat(N), o.compiledImplicit = i(o, "implicit"), o.compiledExplicit = i(o, "explicit"), o.compiledTypeMap = d(o.compiledImplicit, o.compiledExplicit), o;
-  }, aa = t, aa;
+    explicit.forEach(function(type2) {
+      if (!(type2 instanceof Type2)) {
+        throw new YAMLException2("Specified list of YAML types (or a single Type object) contains a non-Type object.");
+      }
+    });
+    const result = Object.create(Schema2.prototype);
+    result.implicit = (this.implicit || []).concat(implicit);
+    result.explicit = (this.explicit || []).concat(explicit);
+    result.compiledImplicit = compileList(result, "implicit");
+    result.compiledExplicit = compileList(result, "explicit");
+    result.compiledTypeMap = compileMap(result.compiledImplicit, result.compiledExplicit);
+    return result;
+  };
+  schema = Schema2;
+  return schema;
 }
-var ra, Ma;
-function ir() {
-  if (Ma) return ra;
-  Ma = 1;
-  const n = J();
-  return ra = new n("tag:yaml.org,2002:str", {
+var str;
+var hasRequiredStr;
+function requireStr() {
+  if (hasRequiredStr) return str;
+  hasRequiredStr = 1;
+  const Type2 = requireType();
+  str = new Type2("tag:yaml.org,2002:str", {
     kind: "scalar",
-    construct: function(r) {
-      return r !== null ? r : "";
+    construct: function(data) {
+      return data !== null ? data : "";
     }
-  }), ra;
+  });
+  return str;
 }
-var ia, wa;
-function nr() {
-  if (wa) return ia;
-  wa = 1;
-  const n = J();
-  return ia = new n("tag:yaml.org,2002:seq", {
+var seq;
+var hasRequiredSeq;
+function requireSeq() {
+  if (hasRequiredSeq) return seq;
+  hasRequiredSeq = 1;
+  const Type2 = requireType();
+  seq = new Type2("tag:yaml.org,2002:seq", {
     kind: "sequence",
-    construct: function(r) {
-      return r !== null ? r : [];
+    construct: function(data) {
+      return data !== null ? data : [];
     }
-  }), ia;
+  });
+  return seq;
 }
-var na, Fa;
-function tr() {
-  if (Fa) return na;
-  Fa = 1;
-  const n = J();
-  return na = new n("tag:yaml.org,2002:map", {
+var map;
+var hasRequiredMap;
+function requireMap() {
+  if (hasRequiredMap) return map;
+  hasRequiredMap = 1;
+  const Type2 = requireType();
+  map = new Type2("tag:yaml.org,2002:map", {
     kind: "mapping",
-    construct: function(r) {
-      return r !== null ? r : {};
+    construct: function(data) {
+      return data !== null ? data : {};
     }
-  }), na;
+  });
+  return map;
 }
-var ta, Oa;
-function sr() {
-  if (Oa) return ta;
-  Oa = 1;
-  const n = rr();
-  return ta = new n({
+var failsafe;
+var hasRequiredFailsafe;
+function requireFailsafe() {
+  if (hasRequiredFailsafe) return failsafe;
+  hasRequiredFailsafe = 1;
+  const Schema2 = requireSchema();
+  failsafe = new Schema2({
     explicit: [
-      ir(),
-      nr(),
-      tr()
+      requireStr(),
+      requireSeq(),
+      requireMap()
     ]
-  }), ta;
+  });
+  return failsafe;
 }
-var sa, Ea;
-function lr() {
-  if (Ea) return sa;
-  Ea = 1;
-  const n = J();
-  function r(t) {
-    if (t === null) return !0;
-    const u = t.length;
-    return u === 1 && t === "~" || u === 4 && (t === "null" || t === "Null" || t === "NULL");
+var _null;
+var hasRequired_null;
+function require_null() {
+  if (hasRequired_null) return _null;
+  hasRequired_null = 1;
+  const Type2 = requireType();
+  function resolveYamlNull(data) {
+    if (data === null) return true;
+    const max = data.length;
+    return max === 1 && data === "~" || max === 4 && (data === "null" || data === "Null" || data === "NULL");
   }
-  function i() {
+  function constructYamlNull() {
     return null;
   }
-  function d(t) {
-    return t === null;
+  function isNull(object) {
+    return object === null;
   }
-  return sa = new n("tag:yaml.org,2002:null", {
+  _null = new Type2("tag:yaml.org,2002:null", {
     kind: "scalar",
-    resolve: r,
-    construct: i,
-    predicate: d,
+    resolve: resolveYamlNull,
+    construct: constructYamlNull,
+    predicate: isNull,
     represent: {
       canonical: function() {
         return "~";
@@ -583,127 +803,150 @@ function lr() {
       }
     },
     defaultStyle: "lowercase"
-  }), sa;
+  });
+  return _null;
 }
-var la, Ua;
-function or() {
-  if (Ua) return la;
-  Ua = 1;
-  const n = J();
-  function r(t) {
-    if (t === null) return !1;
-    const u = t.length;
-    return u === 4 && (t === "true" || t === "True" || t === "TRUE") || u === 5 && (t === "false" || t === "False" || t === "FALSE");
+var bool;
+var hasRequiredBool;
+function requireBool() {
+  if (hasRequiredBool) return bool;
+  hasRequiredBool = 1;
+  const Type2 = requireType();
+  function resolveYamlBoolean(data) {
+    if (data === null) return false;
+    const max = data.length;
+    return max === 4 && (data === "true" || data === "True" || data === "TRUE") || max === 5 && (data === "false" || data === "False" || data === "FALSE");
   }
-  function i(t) {
-    return t === "true" || t === "True" || t === "TRUE";
+  function constructYamlBoolean(data) {
+    return data === "true" || data === "True" || data === "TRUE";
   }
-  function d(t) {
-    return Object.prototype.toString.call(t) === "[object Boolean]";
+  function isBoolean(object) {
+    return Object.prototype.toString.call(object) === "[object Boolean]";
   }
-  return la = new n("tag:yaml.org,2002:bool", {
+  bool = new Type2("tag:yaml.org,2002:bool", {
     kind: "scalar",
-    resolve: r,
-    construct: i,
-    predicate: d,
+    resolve: resolveYamlBoolean,
+    construct: constructYamlBoolean,
+    predicate: isBoolean,
     represent: {
-      lowercase: function(t) {
-        return t ? "true" : "false";
+      lowercase: function(object) {
+        return object ? "true" : "false";
       },
-      uppercase: function(t) {
-        return t ? "TRUE" : "FALSE";
+      uppercase: function(object) {
+        return object ? "TRUE" : "FALSE";
       },
-      camelcase: function(t) {
-        return t ? "True" : "False";
+      camelcase: function(object) {
+        return object ? "True" : "False";
       }
     },
     defaultStyle: "lowercase"
-  }), la;
+  });
+  return bool;
 }
-var oa, Ha;
-function ur() {
-  if (Ha) return oa;
-  Ha = 1;
-  const n = ke(), r = J();
-  function i(o) {
-    return o >= 48 && o <= 57 || o >= 65 && o <= 70 || o >= 97 && o <= 102;
+var int;
+var hasRequiredInt;
+function requireInt() {
+  if (hasRequiredInt) return int;
+  hasRequiredInt = 1;
+  const common2 = requireCommon();
+  const Type2 = requireType();
+  function isHexCode(c) {
+    return c >= 48 && c <= 57 || c >= 65 && c <= 70 || c >= 97 && c <= 102;
   }
-  function d(o) {
-    return o >= 48 && o <= 55;
+  function isOctCode(c) {
+    return c >= 48 && c <= 55;
   }
-  function t(o) {
-    return o >= 48 && o <= 57;
+  function isDecCode(c) {
+    return c >= 48 && c <= 57;
   }
-  function u(o) {
-    if (o === null) return !1;
-    const c = o.length;
-    let D = 0, A = !1;
-    if (!c) return !1;
-    let k = o[D];
-    if ((k === "-" || k === "+") && (k = o[++D]), k === "0") {
-      if (D + 1 === c) return !0;
-      if (k = o[++D], k === "b") {
-        for (D++; D < c; D++) {
-          if (k = o[D], k !== "0" && k !== "1") return !1;
-          A = !0;
+  function resolveYamlInteger(data) {
+    if (data === null) return false;
+    const max = data.length;
+    let index = 0;
+    let hasDigits = false;
+    if (!max) return false;
+    let ch = data[index];
+    if (ch === "-" || ch === "+") {
+      ch = data[++index];
+    }
+    if (ch === "0") {
+      if (index + 1 === max) return true;
+      ch = data[++index];
+      if (ch === "b") {
+        index++;
+        for (; index < max; index++) {
+          ch = data[index];
+          if (ch !== "0" && ch !== "1") return false;
+          hasDigits = true;
         }
-        return A && isFinite(p(o));
+        return hasDigits && isFinite(parseYamlInteger(data));
       }
-      if (k === "x") {
-        for (D++; D < c; D++) {
-          if (!i(o.charCodeAt(D))) return !1;
-          A = !0;
+      if (ch === "x") {
+        index++;
+        for (; index < max; index++) {
+          if (!isHexCode(data.charCodeAt(index))) return false;
+          hasDigits = true;
         }
-        return A && isFinite(p(o));
+        return hasDigits && isFinite(parseYamlInteger(data));
       }
-      if (k === "o") {
-        for (D++; D < c; D++) {
-          if (!d(o.charCodeAt(D))) return !1;
-          A = !0;
+      if (ch === "o") {
+        index++;
+        for (; index < max; index++) {
+          if (!isOctCode(data.charCodeAt(index))) return false;
+          hasDigits = true;
         }
-        return A && isFinite(p(o));
+        return hasDigits && isFinite(parseYamlInteger(data));
       }
     }
-    for (; D < c; D++) {
-      if (!t(o.charCodeAt(D)))
-        return !1;
-      A = !0;
+    for (; index < max; index++) {
+      if (!isDecCode(data.charCodeAt(index))) {
+        return false;
+      }
+      hasDigits = true;
     }
-    return A ? isFinite(p(o)) : !1;
+    if (!hasDigits) return false;
+    return isFinite(parseYamlInteger(data));
   }
-  function p(o) {
-    let c = o, D = 1, A = c[0];
-    if ((A === "-" || A === "+") && (A === "-" && (D = -1), c = c.slice(1), A = c[0]), c === "0") return 0;
-    if (A === "0") {
-      if (c[1] === "b") return D * parseInt(c.slice(2), 2);
-      if (c[1] === "x") return D * parseInt(c.slice(2), 16);
-      if (c[1] === "o") return D * parseInt(c.slice(2), 8);
+  function parseYamlInteger(data) {
+    let value = data;
+    let sign = 1;
+    let ch = value[0];
+    if (ch === "-" || ch === "+") {
+      if (ch === "-") sign = -1;
+      value = value.slice(1);
+      ch = value[0];
     }
-    return D * parseInt(c, 10);
+    if (value === "0") return 0;
+    if (ch === "0") {
+      if (value[1] === "b") return sign * parseInt(value.slice(2), 2);
+      if (value[1] === "x") return sign * parseInt(value.slice(2), 16);
+      if (value[1] === "o") return sign * parseInt(value.slice(2), 8);
+    }
+    return sign * parseInt(value, 10);
   }
-  function m(o) {
-    return p(o);
+  function constructYamlInteger(data) {
+    return parseYamlInteger(data);
   }
-  function N(o) {
-    return Object.prototype.toString.call(o) === "[object Number]" && o % 1 === 0 && !n.isNegativeZero(o);
+  function isInteger(object) {
+    return Object.prototype.toString.call(object) === "[object Number]" && (object % 1 === 0 && !common2.isNegativeZero(object));
   }
-  return oa = new r("tag:yaml.org,2002:int", {
+  int = new Type2("tag:yaml.org,2002:int", {
     kind: "scalar",
-    resolve: u,
-    construct: m,
-    predicate: N,
+    resolve: resolveYamlInteger,
+    construct: constructYamlInteger,
+    predicate: isInteger,
     represent: {
-      binary: function(o) {
-        return o >= 0 ? "0b" + o.toString(2) : "-0b" + o.toString(2).slice(1);
+      binary: function(obj) {
+        return obj >= 0 ? "0b" + obj.toString(2) : "-0b" + obj.toString(2).slice(1);
       },
-      octal: function(o) {
-        return o >= 0 ? "0o" + o.toString(8) : "-0o" + o.toString(8).slice(1);
+      octal: function(obj) {
+        return obj >= 0 ? "0o" + obj.toString(8) : "-0o" + obj.toString(8).slice(1);
       },
-      decimal: function(o) {
-        return o.toString(10);
+      decimal: function(obj) {
+        return obj.toString(10);
       },
-      hexadecimal: function(o) {
-        return o >= 0 ? "0x" + o.toString(16).toUpperCase() : "-0x" + o.toString(16).toUpperCase().slice(1);
+      hexadecimal: function(obj) {
+        return obj >= 0 ? "0x" + obj.toString(16).toUpperCase() : "-0x" + obj.toString(16).toUpperCase().slice(1);
       }
     },
     defaultStyle: "decimal",
@@ -713,30 +956,50 @@ function ur() {
       decimal: [10, "dec"],
       hexadecimal: [16, "hex"]
     }
-  }), oa;
+  });
+  return int;
 }
-var ua, Va;
-function cr() {
-  if (Va) return ua;
-  Va = 1;
-  const n = ke(), r = J(), i = new RegExp(
+var float;
+var hasRequiredFloat;
+function requireFloat() {
+  if (hasRequiredFloat) return float;
+  hasRequiredFloat = 1;
+  const common2 = requireCommon();
+  const Type2 = requireType();
+  const YAML_FLOAT_PATTERN = new RegExp(
     // 2.5e4, 2.5 and integers
     "^(?:[-+]?(?:[0-9]+)(?:\\.[0-9]*)?(?:[eE][-+]?[0-9]+)?|\\.[0-9]+(?:[eE][-+]?[0-9]+)?|[-+]?\\.(?:inf|Inf|INF)|\\.(?:nan|NaN|NAN))$"
-  ), d = new RegExp(
+  );
+  const YAML_FLOAT_SPECIAL_PATTERN = new RegExp(
     "^(?:[-+]?\\.(?:inf|Inf|INF)|\\.(?:nan|NaN|NAN))$"
   );
-  function t(o) {
-    return o === null || !i.test(o) ? !1 : isFinite(parseFloat(o, 10)) ? !0 : d.test(o);
+  function resolveYamlFloat(data) {
+    if (data === null) return false;
+    if (!YAML_FLOAT_PATTERN.test(data)) {
+      return false;
+    }
+    if (isFinite(parseFloat(data, 10))) {
+      return true;
+    }
+    return YAML_FLOAT_SPECIAL_PATTERN.test(data);
   }
-  function u(o) {
-    let c = o.toLowerCase();
-    const D = c[0] === "-" ? -1 : 1;
-    return "+-".indexOf(c[0]) >= 0 && (c = c.slice(1)), c === ".inf" ? D === 1 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY : c === ".nan" ? NaN : D * parseFloat(c, 10);
+  function constructYamlFloat(data) {
+    let value = data.toLowerCase();
+    const sign = value[0] === "-" ? -1 : 1;
+    if ("+-".indexOf(value[0]) >= 0) {
+      value = value.slice(1);
+    }
+    if (value === ".inf") {
+      return sign === 1 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+    } else if (value === ".nan") {
+      return NaN;
+    }
+    return sign * parseFloat(value, 10);
   }
-  const p = /^[-+]?[0-9]+e/;
-  function m(o, c) {
-    if (isNaN(o))
-      switch (c) {
+  const SCIENTIFIC_WITHOUT_DOT = /^[-+]?[0-9]+e/;
+  function representYamlFloat(object, style) {
+    if (isNaN(object)) {
+      switch (style) {
         case "lowercase":
           return ".nan";
         case "uppercase":
@@ -744,8 +1007,8 @@ function cr() {
         case "camelcase":
           return ".NaN";
       }
-    else if (Number.POSITIVE_INFINITY === o)
-      switch (c) {
+    } else if (Number.POSITIVE_INFINITY === object) {
+      switch (style) {
         case "lowercase":
           return ".inf";
         case "uppercase":
@@ -753,8 +1016,8 @@ function cr() {
         case "camelcase":
           return ".Inf";
       }
-    else if (Number.NEGATIVE_INFINITY === o)
-      switch (c) {
+    } else if (Number.NEGATIVE_INFINITY === object) {
+      switch (style) {
         case "lowercase":
           return "-.inf";
         case "uppercase":
@@ -762,274 +1025,406 @@ function cr() {
         case "camelcase":
           return "-.Inf";
       }
-    else if (n.isNegativeZero(o))
+    } else if (common2.isNegativeZero(object)) {
       return "-0.0";
-    const D = o.toString(10);
-    return p.test(D) ? D.replace("e", ".e") : D;
+    }
+    const res = object.toString(10);
+    return SCIENTIFIC_WITHOUT_DOT.test(res) ? res.replace("e", ".e") : res;
   }
-  function N(o) {
-    return Object.prototype.toString.call(o) === "[object Number]" && (o % 1 !== 0 || n.isNegativeZero(o));
+  function isFloat(object) {
+    return Object.prototype.toString.call(object) === "[object Number]" && (object % 1 !== 0 || common2.isNegativeZero(object));
   }
-  return ua = new r("tag:yaml.org,2002:float", {
+  float = new Type2("tag:yaml.org,2002:float", {
     kind: "scalar",
-    resolve: t,
-    construct: u,
-    predicate: N,
-    represent: m,
+    resolve: resolveYamlFloat,
+    construct: constructYamlFloat,
+    predicate: isFloat,
+    represent: representYamlFloat,
     defaultStyle: "lowercase"
-  }), ua;
+  });
+  return float;
 }
-var ca, Wa;
-function Cr() {
-  return Wa || (Wa = 1, ca = sr().extend({
+var json;
+var hasRequiredJson;
+function requireJson() {
+  if (hasRequiredJson) return json;
+  hasRequiredJson = 1;
+  json = requireFailsafe().extend({
     implicit: [
-      lr(),
-      or(),
-      ur(),
-      cr()
+      require_null(),
+      requireBool(),
+      requireInt(),
+      requireFloat()
     ]
-  })), ca;
+  });
+  return json;
 }
-var Ca, Xa;
-function mr() {
-  return Xa || (Xa = 1, Ca = Cr()), Ca;
+var core;
+var hasRequiredCore;
+function requireCore() {
+  if (hasRequiredCore) return core;
+  hasRequiredCore = 1;
+  core = requireJson();
+  return core;
 }
-var ma, Ba;
-function fr() {
-  if (Ba) return ma;
-  Ba = 1;
-  const n = J(), r = new RegExp(
+var timestamp;
+var hasRequiredTimestamp;
+function requireTimestamp() {
+  if (hasRequiredTimestamp) return timestamp;
+  hasRequiredTimestamp = 1;
+  const Type2 = requireType();
+  const YAML_DATE_REGEXP = new RegExp(
     "^([0-9][0-9][0-9][0-9])-([0-9][0-9])-([0-9][0-9])$"
-  ), i = new RegExp(
+  );
+  const YAML_TIMESTAMP_REGEXP = new RegExp(
     "^([0-9][0-9][0-9][0-9])-([0-9][0-9]?)-([0-9][0-9]?)(?:[Tt]|[ \\t]+)([0-9][0-9]?):([0-9][0-9]):([0-9][0-9])(?:\\.([0-9]*))?(?:[ \\t]*(Z|([-+])([0-9][0-9]?)(?::([0-9][0-9]))?))?$"
   );
-  function d(p) {
-    return p === null ? !1 : r.exec(p) !== null || i.exec(p) !== null;
+  function resolveYamlTimestamp(data) {
+    if (data === null) return false;
+    if (YAML_DATE_REGEXP.exec(data) !== null) return true;
+    if (YAML_TIMESTAMP_REGEXP.exec(data) !== null) return true;
+    return false;
   }
-  function t(p) {
-    let m = 0, N = null, o = r.exec(p);
-    if (o === null && (o = i.exec(p)), o === null) throw new Error("Date resolve error");
-    const c = +o[1], D = +o[2] - 1, A = +o[3];
-    if (!o[4])
-      return new Date(Date.UTC(c, D, A));
-    const k = +o[4], j = +o[5], _ = +o[6];
-    if (o[7]) {
-      for (m = o[7].slice(0, 3); m.length < 3; )
-        m += "0";
-      m = +m;
+  function constructYamlTimestamp(data) {
+    let fraction = 0;
+    let delta = null;
+    let match = YAML_DATE_REGEXP.exec(data);
+    if (match === null) match = YAML_TIMESTAMP_REGEXP.exec(data);
+    if (match === null) throw new Error("Date resolve error");
+    const year = +match[1];
+    const month = +match[2] - 1;
+    const day = +match[3];
+    if (!match[4]) {
+      return new Date(Date.UTC(year, month, day));
     }
-    if (o[9]) {
-      const G = +o[10], H = +(o[11] || 0);
-      N = (G * 60 + H) * 6e4, o[9] === "-" && (N = -N);
+    const hour = +match[4];
+    const minute = +match[5];
+    const second = +match[6];
+    if (match[7]) {
+      fraction = match[7].slice(0, 3);
+      while (fraction.length < 3) {
+        fraction += "0";
+      }
+      fraction = +fraction;
     }
-    const q = new Date(Date.UTC(c, D, A, k, j, _, m));
-    return N && q.setTime(q.getTime() - N), q;
+    if (match[9]) {
+      const tzHour = +match[10];
+      const tzMinute = +(match[11] || 0);
+      delta = (tzHour * 60 + tzMinute) * 6e4;
+      if (match[9] === "-") delta = -delta;
+    }
+    const date = new Date(Date.UTC(year, month, day, hour, minute, second, fraction));
+    if (delta) date.setTime(date.getTime() - delta);
+    return date;
   }
-  function u(p) {
-    return p.toISOString();
+  function representYamlTimestamp(object) {
+    return object.toISOString();
   }
-  return ma = new n("tag:yaml.org,2002:timestamp", {
+  timestamp = new Type2("tag:yaml.org,2002:timestamp", {
     kind: "scalar",
-    resolve: d,
-    construct: t,
+    resolve: resolveYamlTimestamp,
+    construct: constructYamlTimestamp,
     instanceOf: Date,
-    represent: u
-  }), ma;
+    represent: representYamlTimestamp
+  });
+  return timestamp;
 }
-var fa, ja;
-function pr() {
-  if (ja) return fa;
-  ja = 1;
-  const n = J();
-  function r(i) {
-    return i === "<<" || i === null;
+var merge;
+var hasRequiredMerge;
+function requireMerge() {
+  if (hasRequiredMerge) return merge;
+  hasRequiredMerge = 1;
+  const Type2 = requireType();
+  function resolveYamlMerge(data) {
+    return data === "<<" || data === null;
   }
-  return fa = new n("tag:yaml.org,2002:merge", {
+  merge = new Type2("tag:yaml.org,2002:merge", {
     kind: "scalar",
-    resolve: r
-  }), fa;
+    resolve: resolveYamlMerge
+  });
+  return merge;
 }
-var pa, qa;
-function dr() {
-  if (qa) return pa;
-  qa = 1;
-  const n = J(), r = `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
-\r`;
-  function i(p) {
-    if (p === null) return !1;
-    let m = 0;
-    const N = p.length, o = r;
-    for (let c = 0; c < N; c++) {
-      const D = o.indexOf(p.charAt(c));
-      if (!(D > 64)) {
-        if (D < 0) return !1;
-        m += 6;
+var binary;
+var hasRequiredBinary;
+function requireBinary() {
+  if (hasRequiredBinary) return binary;
+  hasRequiredBinary = 1;
+  const Type2 = requireType();
+  const BASE64_MAP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r";
+  function resolveYamlBinary(data) {
+    if (data === null) return false;
+    let bitlen = 0;
+    const max = data.length;
+    const map2 = BASE64_MAP;
+    for (let idx = 0; idx < max; idx++) {
+      const code = map2.indexOf(data.charAt(idx));
+      if (code > 64) continue;
+      if (code < 0) return false;
+      bitlen += 6;
+    }
+    return bitlen % 8 === 0;
+  }
+  function constructYamlBinary(data) {
+    const input = data.replace(/[\r\n=]/g, "");
+    const max = input.length;
+    const map2 = BASE64_MAP;
+    let bits = 0;
+    const result = [];
+    for (let idx = 0; idx < max; idx++) {
+      if (idx % 4 === 0 && idx) {
+        result.push(bits >> 16 & 255);
+        result.push(bits >> 8 & 255);
+        result.push(bits & 255);
+      }
+      bits = bits << 6 | map2.indexOf(input.charAt(idx));
+    }
+    const tailbits = max % 4 * 6;
+    if (tailbits === 0) {
+      result.push(bits >> 16 & 255);
+      result.push(bits >> 8 & 255);
+      result.push(bits & 255);
+    } else if (tailbits === 18) {
+      result.push(bits >> 10 & 255);
+      result.push(bits >> 2 & 255);
+    } else if (tailbits === 12) {
+      result.push(bits >> 4 & 255);
+    }
+    return new Uint8Array(result);
+  }
+  function representYamlBinary(object) {
+    let result = "";
+    let bits = 0;
+    const max = object.length;
+    const map2 = BASE64_MAP;
+    for (let idx = 0; idx < max; idx++) {
+      if (idx % 3 === 0 && idx) {
+        result += map2[bits >> 18 & 63];
+        result += map2[bits >> 12 & 63];
+        result += map2[bits >> 6 & 63];
+        result += map2[bits & 63];
+      }
+      bits = (bits << 8) + object[idx];
+    }
+    const tail = max % 3;
+    if (tail === 0) {
+      result += map2[bits >> 18 & 63];
+      result += map2[bits >> 12 & 63];
+      result += map2[bits >> 6 & 63];
+      result += map2[bits & 63];
+    } else if (tail === 2) {
+      result += map2[bits >> 10 & 63];
+      result += map2[bits >> 4 & 63];
+      result += map2[bits << 2 & 63];
+      result += map2[64];
+    } else if (tail === 1) {
+      result += map2[bits >> 2 & 63];
+      result += map2[bits << 4 & 63];
+      result += map2[64];
+      result += map2[64];
+    }
+    return result;
+  }
+  function isBinary(obj) {
+    return Object.prototype.toString.call(obj) === "[object Uint8Array]";
+  }
+  binary = new Type2("tag:yaml.org,2002:binary", {
+    kind: "scalar",
+    resolve: resolveYamlBinary,
+    construct: constructYamlBinary,
+    predicate: isBinary,
+    represent: representYamlBinary
+  });
+  return binary;
+}
+var omap;
+var hasRequiredOmap;
+function requireOmap() {
+  if (hasRequiredOmap) return omap;
+  hasRequiredOmap = 1;
+  const Type2 = requireType();
+  const _hasOwnProperty = Object.prototype.hasOwnProperty;
+  const _toString = Object.prototype.toString;
+  function resolveYamlOmap(data) {
+    if (data === null) return true;
+    const objectKeys = {};
+    const object = data;
+    for (let index = 0, length = object.length; index < length; index += 1) {
+      const pair = object[index];
+      let pairHasKey = false;
+      if (_toString.call(pair) !== "[object Object]") return false;
+      let pairKey;
+      for (pairKey in pair) {
+        if (_hasOwnProperty.call(pair, pairKey)) {
+          if (!pairHasKey) pairHasKey = true;
+          else return false;
+        }
+      }
+      if (!pairHasKey) return false;
+      if (_hasOwnProperty.call(objectKeys, pairKey)) return false;
+      Object.defineProperty(objectKeys, pairKey, { value: true });
+    }
+    return true;
+  }
+  function constructYamlOmap(data) {
+    return data !== null ? data : [];
+  }
+  omap = new Type2("tag:yaml.org,2002:omap", {
+    kind: "sequence",
+    resolve: resolveYamlOmap,
+    construct: constructYamlOmap
+  });
+  return omap;
+}
+var pairs;
+var hasRequiredPairs;
+function requirePairs() {
+  if (hasRequiredPairs) return pairs;
+  hasRequiredPairs = 1;
+  const Type2 = requireType();
+  const _toString = Object.prototype.toString;
+  function resolveYamlPairs(data) {
+    if (data === null) return true;
+    const object = data;
+    const result = new Array(object.length);
+    for (let index = 0, length = object.length; index < length; index += 1) {
+      const pair = object[index];
+      if (_toString.call(pair) !== "[object Object]") return false;
+      const keys = Object.keys(pair);
+      if (keys.length !== 1) return false;
+      result[index] = [keys[0], pair[keys[0]]];
+    }
+    return true;
+  }
+  function constructYamlPairs(data) {
+    if (data === null) return [];
+    const object = data;
+    const result = new Array(object.length);
+    for (let index = 0, length = object.length; index < length; index += 1) {
+      const pair = object[index];
+      const keys = Object.keys(pair);
+      result[index] = [keys[0], pair[keys[0]]];
+    }
+    return result;
+  }
+  pairs = new Type2("tag:yaml.org,2002:pairs", {
+    kind: "sequence",
+    resolve: resolveYamlPairs,
+    construct: constructYamlPairs
+  });
+  return pairs;
+}
+var set;
+var hasRequiredSet;
+function requireSet() {
+  if (hasRequiredSet) return set;
+  hasRequiredSet = 1;
+  const Type2 = requireType();
+  const _hasOwnProperty = Object.prototype.hasOwnProperty;
+  function resolveYamlSet(data) {
+    if (data === null) return true;
+    const object = data;
+    for (const key in object) {
+      if (_hasOwnProperty.call(object, key)) {
+        if (object[key] !== null) return false;
       }
     }
-    return m % 8 === 0;
+    return true;
   }
-  function d(p) {
-    const m = p.replace(/[\r\n=]/g, ""), N = m.length, o = r;
-    let c = 0;
-    const D = [];
-    for (let k = 0; k < N; k++)
-      k % 4 === 0 && k && (D.push(c >> 16 & 255), D.push(c >> 8 & 255), D.push(c & 255)), c = c << 6 | o.indexOf(m.charAt(k));
-    const A = N % 4 * 6;
-    return A === 0 ? (D.push(c >> 16 & 255), D.push(c >> 8 & 255), D.push(c & 255)) : A === 18 ? (D.push(c >> 10 & 255), D.push(c >> 2 & 255)) : A === 12 && D.push(c >> 4 & 255), new Uint8Array(D);
+  function constructYamlSet(data) {
+    return data !== null ? data : {};
   }
-  function t(p) {
-    let m = "", N = 0;
-    const o = p.length, c = r;
-    for (let A = 0; A < o; A++)
-      A % 3 === 0 && A && (m += c[N >> 18 & 63], m += c[N >> 12 & 63], m += c[N >> 6 & 63], m += c[N & 63]), N = (N << 8) + p[A];
-    const D = o % 3;
-    return D === 0 ? (m += c[N >> 18 & 63], m += c[N >> 12 & 63], m += c[N >> 6 & 63], m += c[N & 63]) : D === 2 ? (m += c[N >> 10 & 63], m += c[N >> 4 & 63], m += c[N << 2 & 63], m += c[64]) : D === 1 && (m += c[N >> 2 & 63], m += c[N << 4 & 63], m += c[64], m += c[64]), m;
-  }
-  function u(p) {
-    return Object.prototype.toString.call(p) === "[object Uint8Array]";
-  }
-  return pa = new n("tag:yaml.org,2002:binary", {
-    kind: "scalar",
-    resolve: i,
-    construct: d,
-    predicate: u,
-    represent: t
-  }), pa;
-}
-var da, Ga;
-function hr() {
-  if (Ga) return da;
-  Ga = 1;
-  const n = J(), r = Object.prototype.hasOwnProperty, i = Object.prototype.toString;
-  function d(u) {
-    if (u === null) return !0;
-    const p = {}, m = u;
-    for (let N = 0, o = m.length; N < o; N += 1) {
-      const c = m[N];
-      let D = !1;
-      if (i.call(c) !== "[object Object]") return !1;
-      let A;
-      for (A in c)
-        if (r.call(c, A))
-          if (!D) D = !0;
-          else return !1;
-      if (!D || r.call(p, A)) return !1;
-      Object.defineProperty(p, A, { value: !0 });
-    }
-    return !0;
-  }
-  function t(u) {
-    return u !== null ? u : [];
-  }
-  return da = new n("tag:yaml.org,2002:omap", {
-    kind: "sequence",
-    resolve: d,
-    construct: t
-  }), da;
-}
-var ha, za;
-function Tr() {
-  if (za) return ha;
-  za = 1;
-  const n = J(), r = Object.prototype.toString;
-  function i(t) {
-    if (t === null) return !0;
-    const u = t, p = new Array(u.length);
-    for (let m = 0, N = u.length; m < N; m += 1) {
-      const o = u[m];
-      if (r.call(o) !== "[object Object]") return !1;
-      const c = Object.keys(o);
-      if (c.length !== 1) return !1;
-      p[m] = [c[0], o[c[0]]];
-    }
-    return !0;
-  }
-  function d(t) {
-    if (t === null) return [];
-    const u = t, p = new Array(u.length);
-    for (let m = 0, N = u.length; m < N; m += 1) {
-      const o = u[m], c = Object.keys(o);
-      p[m] = [c[0], o[c[0]]];
-    }
-    return p;
-  }
-  return ha = new n("tag:yaml.org,2002:pairs", {
-    kind: "sequence",
-    resolve: i,
-    construct: d
-  }), ha;
-}
-var Ta, Ya;
-function gr() {
-  if (Ya) return Ta;
-  Ya = 1;
-  const n = J(), r = Object.prototype.hasOwnProperty;
-  function i(t) {
-    if (t === null) return !0;
-    const u = t;
-    for (const p in u)
-      if (r.call(u, p) && u[p] !== null)
-        return !1;
-    return !0;
-  }
-  function d(t) {
-    return t !== null ? t : {};
-  }
-  return Ta = new n("tag:yaml.org,2002:set", {
+  set = new Type2("tag:yaml.org,2002:set", {
     kind: "mapping",
-    resolve: i,
-    construct: d
-  }), Ta;
+    resolve: resolveYamlSet,
+    construct: constructYamlSet
+  });
+  return set;
 }
-var ga, Ja;
-function Na() {
-  return Ja || (Ja = 1, ga = mr().extend({
+var _default;
+var hasRequired_default;
+function require_default() {
+  if (hasRequired_default) return _default;
+  hasRequired_default = 1;
+  _default = requireCore().extend({
     implicit: [
-      fr(),
-      pr()
+      requireTimestamp(),
+      requireMerge()
     ],
     explicit: [
-      dr(),
-      hr(),
-      Tr(),
-      gr()
+      requireBinary(),
+      requireOmap(),
+      requirePairs(),
+      requireSet()
     ]
-  })), ga;
+  });
+  return _default;
 }
-var Ka;
-function jr() {
-  if (Ka) return Be;
-  Ka = 1;
-  const n = ke(), r = _e(), i = Br(), d = Na(), t = Object.prototype.hasOwnProperty, u = 1, p = 2, m = 3, N = 4, o = 1, c = 2, D = 3, A = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/, k = /[\x85\u2028\u2029]/, j = /[,\[\]{}]/, _ = /^(?:!|!!|![0-9A-Za-z-]+!)$/, q = /^(?:!|[^,\[\]{}])(?:%[0-9a-f]{2}|[0-9a-z\-#;/?:@&=+$,_.!~*'()\[\]])*$/i;
-  function G(e) {
-    return Object.prototype.toString.call(e);
+var hasRequiredLoader;
+function requireLoader() {
+  if (hasRequiredLoader) return loader;
+  hasRequiredLoader = 1;
+  const common2 = requireCommon();
+  const YAMLException2 = requireException();
+  const makeSnippet = requireSnippet();
+  const DEFAULT_SCHEMA2 = require_default();
+  const _hasOwnProperty = Object.prototype.hasOwnProperty;
+  const CONTEXT_FLOW_IN = 1;
+  const CONTEXT_FLOW_OUT = 2;
+  const CONTEXT_BLOCK_IN = 3;
+  const CONTEXT_BLOCK_OUT = 4;
+  const CHOMPING_CLIP = 1;
+  const CHOMPING_STRIP = 2;
+  const CHOMPING_KEEP = 3;
+  const PATTERN_NON_PRINTABLE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+  const PATTERN_NON_ASCII_LINE_BREAKS = /[\x85\u2028\u2029]/;
+  const PATTERN_FLOW_INDICATORS = /[,\[\]{}]/;
+  const PATTERN_TAG_HANDLE = /^(?:!|!!|![0-9A-Za-z-]+!)$/;
+  const PATTERN_TAG_URI = /^(?:!|[^,\[\]{}])(?:%[0-9a-f]{2}|[0-9a-z\-#;/?:@&=+$,_.!~*'()\[\]])*$/i;
+  function _class(obj) {
+    return Object.prototype.toString.call(obj);
   }
-  function H(e) {
-    return e === 10 || e === 13;
+  function isEol(c) {
+    return c === 10 || c === 13;
   }
-  function W(e) {
-    return e === 9 || e === 32;
+  function isWhiteSpace(c) {
+    return c === 9 || c === 32;
   }
-  function X(e) {
-    return e === 9 || e === 32 || e === 10 || e === 13;
+  function isWsOrEol(c) {
+    return c === 9 || c === 32 || c === 10 || c === 13;
   }
-  function $(e) {
-    return e === 44 || e === 91 || e === 93 || e === 123 || e === 125;
+  function isFlowIndicator(c) {
+    return c === 44 || c === 91 || c === 93 || c === 123 || c === 125;
   }
-  function pe(e) {
-    if (e >= 48 && e <= 57)
-      return e - 48;
-    const s = e | 32;
-    return s >= 97 && s <= 102 ? s - 97 + 10 : -1;
+  function fromHexCode(c) {
+    if (c >= 48 && c <= 57) {
+      return c - 48;
+    }
+    const lc = c | 32;
+    if (lc >= 97 && lc <= 102) {
+      return lc - 97 + 10;
+    }
+    return -1;
   }
-  function le(e) {
-    return e === 120 ? 2 : e === 117 ? 4 : e === 85 ? 8 : 0;
+  function escapedHexLen(c) {
+    if (c === 120) {
+      return 2;
+    }
+    if (c === 117) {
+      return 4;
+    }
+    if (c === 85) {
+      return 8;
+    }
+    return 0;
   }
-  function oe(e) {
-    return e >= 48 && e <= 57 ? e - 48 : -1;
+  function fromDecimalCode(c) {
+    if (c >= 48 && c <= 57) {
+      return c - 48;
+    }
+    return -1;
   }
-  function ee(e) {
-    switch (e) {
+  function simpleEscapeSequence(c) {
+    switch (c) {
       case 48:
         return "\0";
       case 97:
@@ -1041,8 +1436,7 @@ function jr() {
       case 9:
         return "	";
       case 110:
-        return `
-`;
+        return "\n";
       case 118:
         return "\v";
       case 102:
@@ -1071,543 +1465,1323 @@ function jr() {
         return "";
     }
   }
-  function ge(e) {
-    return e <= 65535 ? String.fromCharCode(e) : String.fromCharCode(
-      (e - 65536 >> 10) + 55296,
-      (e - 65536 & 1023) + 56320
+  function charFromCodepoint(c) {
+    if (c <= 65535) {
+      return String.fromCharCode(c);
+    }
+    return String.fromCharCode(
+      (c - 65536 >> 10) + 55296,
+      (c - 65536 & 1023) + 56320
     );
   }
-  function M(e, s, f) {
-    s === "__proto__" ? Object.defineProperty(e, s, {
-      configurable: !0,
-      enumerable: !0,
-      writable: !0,
-      value: f
-    }) : e[s] = f;
-  }
-  const E = new Array(256), w = new Array(256);
-  for (let e = 0; e < 256; e++)
-    E[e] = ee(e) ? 1 : 0, w[e] = ee(e);
-  function O(e, s) {
-    this.input = e, this.filename = s.filename || null, this.schema = s.schema || d, this.onWarning = s.onWarning || null, this.legacy = s.legacy || !1, this.json = s.json || !1, this.listener = s.listener || null, this.maxDepth = typeof s.maxDepth == "number" ? s.maxDepth : 100, this.maxTotalMergeKeys = typeof s.maxTotalMergeKeys == "number" ? s.maxTotalMergeKeys : 1e4, this.implicitTypes = this.schema.compiledImplicit, this.typeMap = this.schema.compiledTypeMap, this.length = e.length, this.position = 0, this.line = 0, this.lineStart = 0, this.lineIndent = 0, this.depth = 0, this.totalMergeKeys = 0, this.firstTabInLine = -1, this.documents = [], this.anchorMapTransactions = [];
-  }
-  function Z(e, s) {
-    const f = {
-      name: e.filename,
-      buffer: e.input.slice(0, -1),
-      // omit trailing \0
-      position: e.position,
-      line: e.line,
-      column: e.position - e.lineStart
-    };
-    return f.snippet = i(f), new r(s, f);
-  }
-  function y(e, s) {
-    throw Z(e, s);
-  }
-  function ue(e, s) {
-    e.onWarning && e.onWarning.call(null, Z(e, s));
-  }
-  function Q(e, s, f) {
-    const g = e.anchorMapTransactions;
-    if (g.length !== 0) {
-      const C = g[g.length - 1];
-      t.call(C, s) || (C[s] = {
-        existed: t.call(e.anchorMap, s),
-        value: e.anchorMap[s]
+  function setProperty(object, key, value) {
+    if (key === "__proto__") {
+      Object.defineProperty(object, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value
       });
-    }
-    e.anchorMap[s] = f;
-  }
-  function de(e) {
-    e.anchorMapTransactions.push(/* @__PURE__ */ Object.create(null));
-  }
-  function ae(e) {
-    const s = e.anchorMapTransactions.pop(), f = e.anchorMapTransactions;
-    if (f.length === 0) return;
-    const g = f[f.length - 1], C = Object.keys(s);
-    for (let I = 0, a = C.length; I < a; I += 1) {
-      const l = C[I];
-      t.call(g, l) || (g[l] = s[l]);
+    } else {
+      object[key] = value;
     }
   }
-  function Se(e) {
-    const s = e.anchorMapTransactions.pop(), f = Object.keys(s);
-    for (let g = f.length - 1; g >= 0; g -= 1) {
-      const C = s[f[g]];
-      C.existed ? e.anchorMap[f[g]] = C.value : delete e.anchorMap[f[g]];
+  const simpleEscapeCheck = new Array(256);
+  const simpleEscapeMap = new Array(256);
+  for (let i = 0; i < 256; i++) {
+    simpleEscapeCheck[i] = simpleEscapeSequence(i) ? 1 : 0;
+    simpleEscapeMap[i] = simpleEscapeSequence(i);
+  }
+  function State(input, options) {
+    this.input = input;
+    this.filename = options["filename"] || null;
+    this.schema = options["schema"] || DEFAULT_SCHEMA2;
+    this.onWarning = options["onWarning"] || null;
+    this.legacy = options["legacy"] || false;
+    this.json = options["json"] || false;
+    this.listener = options["listener"] || null;
+    this.maxDepth = typeof options["maxDepth"] === "number" ? options["maxDepth"] : 100;
+    this.maxTotalMergeKeys = typeof options["maxTotalMergeKeys"] === "number" ? options["maxTotalMergeKeys"] : 1e4;
+    this.implicitTypes = this.schema.compiledImplicit;
+    this.typeMap = this.schema.compiledTypeMap;
+    this.length = input.length;
+    this.position = 0;
+    this.line = 0;
+    this.lineStart = 0;
+    this.lineIndent = 0;
+    this.depth = 0;
+    this.totalMergeKeys = 0;
+    this.firstTabInLine = -1;
+    this.documents = [];
+    this.anchorMapTransactions = [];
+  }
+  function generateError(state, message) {
+    const mark = {
+      name: state.filename,
+      buffer: state.input.slice(0, -1),
+      // omit trailing \0
+      position: state.position,
+      line: state.line,
+      column: state.position - state.lineStart
+    };
+    mark.snippet = makeSnippet(mark);
+    return new YAMLException2(message, mark);
+  }
+  function throwError(state, message) {
+    throw generateError(state, message);
+  }
+  function throwWarning(state, message) {
+    if (state.onWarning) {
+      state.onWarning.call(null, generateError(state, message));
     }
   }
-  function ce(e) {
+  function storeAnchor(state, name, value) {
+    const transactions = state.anchorMapTransactions;
+    if (transactions.length !== 0) {
+      const transaction = transactions[transactions.length - 1];
+      if (!_hasOwnProperty.call(transaction, name)) {
+        transaction[name] = {
+          existed: _hasOwnProperty.call(state.anchorMap, name),
+          value: state.anchorMap[name]
+        };
+      }
+    }
+    state.anchorMap[name] = value;
+  }
+  function beginAnchorTransaction(state) {
+    state.anchorMapTransactions.push(/* @__PURE__ */ Object.create(null));
+  }
+  function commitAnchorTransaction(state) {
+    const transaction = state.anchorMapTransactions.pop();
+    const transactions = state.anchorMapTransactions;
+    if (transactions.length === 0) return;
+    const parent = transactions[transactions.length - 1];
+    const names = Object.keys(transaction);
+    for (let index = 0, length = names.length; index < length; index += 1) {
+      const name = names[index];
+      if (!_hasOwnProperty.call(parent, name)) {
+        parent[name] = transaction[name];
+      }
+    }
+  }
+  function rollbackAnchorTransaction(state) {
+    const transaction = state.anchorMapTransactions.pop();
+    const names = Object.keys(transaction);
+    for (let index = names.length - 1; index >= 0; index -= 1) {
+      const entry = transaction[names[index]];
+      if (entry.existed) {
+        state.anchorMap[names[index]] = entry.value;
+      } else {
+        delete state.anchorMap[names[index]];
+      }
+    }
+  }
+  function snapshotState(state) {
     return {
-      position: e.position,
-      line: e.line,
-      lineStart: e.lineStart,
-      lineIndent: e.lineIndent,
-      firstTabInLine: e.firstTabInLine,
-      tag: e.tag,
-      anchor: e.anchor,
-      kind: e.kind,
-      result: e.result
+      position: state.position,
+      line: state.line,
+      lineStart: state.lineStart,
+      lineIndent: state.lineIndent,
+      firstTabInLine: state.firstTabInLine,
+      tag: state.tag,
+      anchor: state.anchor,
+      kind: state.kind,
+      result: state.result
     };
   }
-  function Ce(e, s) {
-    e.position = s.position, e.line = s.line, e.lineStart = s.lineStart, e.lineIndent = s.lineIndent, e.firstTabInLine = s.firstTabInLine, e.tag = s.tag, e.anchor = s.anchor, e.kind = s.kind, e.result = s.result;
+  function restoreState(state, snapshot) {
+    state.position = snapshot.position;
+    state.line = snapshot.line;
+    state.lineStart = snapshot.lineStart;
+    state.lineIndent = snapshot.lineIndent;
+    state.firstTabInLine = snapshot.firstTabInLine;
+    state.tag = snapshot.tag;
+    state.anchor = snapshot.anchor;
+    state.kind = snapshot.kind;
+    state.result = snapshot.result;
   }
-  const ve = {
-    YAML: function(s, f, g) {
-      s.version !== null && y(s, "duplication of %YAML directive"), g.length !== 1 && y(s, "YAML directive accepts exactly one argument");
-      const C = /^([0-9]+)\.([0-9]+)$/.exec(g[0]);
-      C === null && y(s, "ill-formed argument of the YAML directive");
-      const I = parseInt(C[1], 10), a = parseInt(C[2], 10);
-      I !== 1 && y(s, "unacceptable YAML version of the document"), s.version = g[0], s.checkLineBreaks = a < 2, a !== 1 && a !== 2 && ue(s, "unsupported YAML version of the document");
-    },
-    TAG: function(s, f, g) {
-      let C;
-      g.length !== 2 && y(s, "TAG directive accepts exactly two arguments");
-      const I = g[0];
-      C = g[1], _.test(I) || y(s, "ill-formed tag handle (first argument) of the TAG directive"), t.call(s.tagMap, I) && y(s, 'there is a previously declared suffix for "' + I + '" tag handle'), q.test(C) || y(s, "ill-formed tag prefix (second argument) of the TAG directive");
-      try {
-        C = decodeURIComponent(C);
-      } catch {
-        y(s, "tag prefix is malformed: " + C);
+  const directiveHandlers = {
+    YAML: function handleYamlDirective(state, name, args) {
+      if (state.version !== null) {
+        throwError(state, "duplication of %YAML directive");
       }
-      s.tagMap[I] = C;
+      if (args.length !== 1) {
+        throwError(state, "YAML directive accepts exactly one argument");
+      }
+      const match = /^([0-9]+)\.([0-9]+)$/.exec(args[0]);
+      if (match === null) {
+        throwError(state, "ill-formed argument of the YAML directive");
+      }
+      const major = parseInt(match[1], 10);
+      const minor = parseInt(match[2], 10);
+      if (major !== 1) {
+        throwError(state, "unacceptable YAML version of the document");
+      }
+      state.version = args[0];
+      state.checkLineBreaks = minor < 2;
+      if (minor !== 1 && minor !== 2) {
+        throwWarning(state, "unsupported YAML version of the document");
+      }
+    },
+    TAG: function handleTagDirective(state, name, args) {
+      let prefix;
+      if (args.length !== 2) {
+        throwError(state, "TAG directive accepts exactly two arguments");
+      }
+      const handle = args[0];
+      prefix = args[1];
+      if (!PATTERN_TAG_HANDLE.test(handle)) {
+        throwError(state, "ill-formed tag handle (first argument) of the TAG directive");
+      }
+      if (_hasOwnProperty.call(state.tagMap, handle)) {
+        throwError(state, 'there is a previously declared suffix for "' + handle + '" tag handle');
+      }
+      if (!PATTERN_TAG_URI.test(prefix)) {
+        throwError(state, "ill-formed tag prefix (second argument) of the TAG directive");
+      }
+      try {
+        prefix = decodeURIComponent(prefix);
+      } catch (err) {
+        throwError(state, "tag prefix is malformed: " + prefix);
+      }
+      state.tagMap[handle] = prefix;
     }
   };
-  function z(e, s, f, g) {
-    if (s < f) {
-      const C = e.input.slice(s, f);
-      if (g)
-        for (let I = 0, a = C.length; I < a; I += 1) {
-          const l = C.charCodeAt(I);
-          l === 9 || l >= 32 && l <= 1114111 || y(e, "expected valid JSON character");
+  function captureSegment(state, start, end, checkJson) {
+    if (start < end) {
+      const _result = state.input.slice(start, end);
+      if (checkJson) {
+        for (let _position = 0, _length = _result.length; _position < _length; _position += 1) {
+          const _character = _result.charCodeAt(_position);
+          if (!(_character === 9 || _character >= 32 && _character <= 1114111)) {
+            throwError(state, "expected valid JSON character");
+          }
         }
-      else A.test(C) && y(e, "the stream contains non-printable characters");
-      e.result += C;
+      } else if (PATTERN_NON_PRINTABLE.test(_result)) {
+        throwError(state, "the stream contains non-printable characters");
+      }
+      state.result += _result;
     }
   }
-  function me(e, s, f, g) {
-    n.isObject(f) || y(e, "cannot merge mappings; the provided source object is unacceptable");
-    const C = Object.keys(f);
-    for (let I = 0, a = C.length; I < a; I += 1) {
-      const l = C[I];
-      e.maxTotalMergeKeys !== -1 && ++e.totalMergeKeys > e.maxTotalMergeKeys && y(e, "merge keys exceeded maxTotalMergeKeys (" + e.maxTotalMergeKeys + ")"), t.call(s, l) || (M(s, l, f[l]), g[l] = !0);
+  function mergeMappings(state, destination, source, overridableKeys) {
+    if (!common2.isObject(source)) {
+      throwError(state, "cannot merge mappings; the provided source object is unacceptable");
+    }
+    const sourceKeys = Object.keys(source);
+    for (let index = 0, quantity = sourceKeys.length; index < quantity; index += 1) {
+      const key = sourceKeys[index];
+      if (state.maxTotalMergeKeys !== -1 && ++state.totalMergeKeys > state.maxTotalMergeKeys) {
+        throwError(state, "merge keys exceeded maxTotalMergeKeys (" + state.maxTotalMergeKeys + ")");
+      }
+      if (!_hasOwnProperty.call(destination, key)) {
+        setProperty(destination, key, source[key]);
+        overridableKeys[key] = true;
+      }
     }
   }
-  function re(e, s, f, g, C, I, a, l, v) {
-    if (Array.isArray(C)) {
-      C = Array.prototype.slice.call(C);
-      for (let h = 0, T = C.length; h < T; h += 1)
-        Array.isArray(C[h]) && y(e, "nested arrays are not supported inside keys"), typeof C == "object" && G(C[h]) === "[object Object]" && (C[h] = "[object Object]");
+  function storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, valueNode, startLine, startLineStart, startPos) {
+    if (Array.isArray(keyNode)) {
+      keyNode = Array.prototype.slice.call(keyNode);
+      for (let index = 0, quantity = keyNode.length; index < quantity; index += 1) {
+        if (Array.isArray(keyNode[index])) {
+          throwError(state, "nested arrays are not supported inside keys");
+        }
+        if (typeof keyNode === "object" && _class(keyNode[index]) === "[object Object]") {
+          keyNode[index] = "[object Object]";
+        }
+      }
     }
-    if (typeof C == "object" && G(C) === "[object Object]" && (C = "[object Object]"), C = String(C), s === null && (s = {}), g === "tag:yaml.org,2002:merge")
-      if (Array.isArray(I))
-        for (let h = 0, T = I.length; h < T; h += 1)
-          me(e, s, I[h], f);
-      else
-        me(e, s, I, f);
-    else
-      !e.json && !t.call(f, C) && t.call(s, C) && (e.line = a || e.line, e.lineStart = l || e.lineStart, e.position = v || e.position, y(e, "duplicated mapping key")), M(s, C, I), delete f[C];
-    return s;
-  }
-  function Le(e) {
-    const s = e.input.charCodeAt(e.position);
-    s === 10 ? e.position++ : s === 13 ? (e.position++, e.input.charCodeAt(e.position) === 10 && e.position++) : y(e, "a line break is expected"), e.line += 1, e.lineStart = e.position, e.firstTabInLine = -1;
-  }
-  function V(e, s, f) {
-    let g = 0, C = e.input.charCodeAt(e.position);
-    for (; C !== 0; ) {
-      for (; W(C); )
-        C === 9 && e.firstTabInLine === -1 && (e.firstTabInLine = e.position), C = e.input.charCodeAt(++e.position);
-      if (s && C === 35)
-        do
-          C = e.input.charCodeAt(++e.position);
-        while (C !== 10 && C !== 13 && C !== 0);
-      if (H(C))
-        for (Le(e), C = e.input.charCodeAt(e.position), g++, e.lineIndent = 0; C === 32; )
-          e.lineIndent++, C = e.input.charCodeAt(++e.position);
-      else
-        break;
+    if (typeof keyNode === "object" && _class(keyNode) === "[object Object]") {
+      keyNode = "[object Object]";
     }
-    return f !== -1 && g !== 0 && e.lineIndent < f && ue(e, "deficient indentation"), g;
-  }
-  function Ie(e) {
-    let s = e.position, f = e.input.charCodeAt(s);
-    return !!((f === 45 || f === 46) && f === e.input.charCodeAt(s + 1) && f === e.input.charCodeAt(s + 2) && (s += 3, f = e.input.charCodeAt(s), f === 0 || X(f)));
-  }
-  function ie(e, s) {
-    s === 1 ? e.result += " " : s > 1 && (e.result += n.repeat(`
-`, s - 1));
-  }
-  function Me(e, s, f) {
-    let g, C, I, a, l, v;
-    const h = e.kind, T = e.result;
-    let L = e.input.charCodeAt(e.position);
-    if (X(L) || $(L) || L === 35 || L === 38 || L === 42 || L === 33 || L === 124 || L === 62 || L === 39 || L === 34 || L === 37 || L === 64 || L === 96)
-      return !1;
-    if (L === 63 || L === 45) {
-      const S = e.input.charCodeAt(e.position + 1);
-      if (X(S) || f && $(S))
-        return !1;
+    keyNode = String(keyNode);
+    if (_result === null) {
+      _result = {};
     }
-    for (e.kind = "scalar", e.result = "", g = C = e.position, I = !1; L !== 0; ) {
-      if (L === 58) {
-        const S = e.input.charCodeAt(e.position + 1);
-        if (X(S) || f && $(S))
-          break;
-      } else if (L === 35) {
-        const S = e.input.charCodeAt(e.position - 1);
-        if (X(S))
-          break;
+    if (keyTag === "tag:yaml.org,2002:merge") {
+      if (Array.isArray(valueNode)) {
+        for (let index = 0, quantity = valueNode.length; index < quantity; index += 1) {
+          mergeMappings(state, _result, valueNode[index], overridableKeys);
+        }
       } else {
-        if (e.position === e.lineStart && Ie(e) || f && $(L))
-          break;
-        if (H(L))
-          if (a = e.line, l = e.lineStart, v = e.lineIndent, V(e, !1, -1), e.lineIndent >= s) {
-            I = !0, L = e.input.charCodeAt(e.position);
-            continue;
-          } else {
-            e.position = C, e.line = a, e.lineStart = l, e.lineIndent = v;
-            break;
-          }
+        mergeMappings(state, _result, valueNode, overridableKeys);
       }
-      I && (z(e, g, C, !1), ie(e, e.line - a), g = C = e.position, I = !1), W(L) || (C = e.position + 1), L = e.input.charCodeAt(++e.position);
-    }
-    return z(e, g, C, !1), e.result ? !0 : (e.kind = h, e.result = T, !1);
-  }
-  function we(e, s) {
-    let f, g, C = e.input.charCodeAt(e.position);
-    if (C !== 39)
-      return !1;
-    for (e.kind = "scalar", e.result = "", e.position++, f = g = e.position; (C = e.input.charCodeAt(e.position)) !== 0; )
-      if (C === 39)
-        if (z(e, f, e.position, !0), C = e.input.charCodeAt(++e.position), C === 39)
-          f = e.position, e.position++, g = e.position;
-        else
-          return !0;
-      else H(C) ? (z(e, f, g, !0), ie(e, V(e, !1, s)), f = g = e.position) : e.position === e.lineStart && Ie(e) ? y(e, "unexpected end of the document within a single quoted scalar") : (e.position++, W(C) || (g = e.position));
-    y(e, "unexpected end of the stream within a single quoted scalar");
-  }
-  function ye(e, s) {
-    let f, g, C, I = e.input.charCodeAt(e.position);
-    if (I !== 34)
-      return !1;
-    for (e.kind = "scalar", e.result = "", e.position++, f = g = e.position; (I = e.input.charCodeAt(e.position)) !== 0; ) {
-      if (I === 34)
-        return z(e, f, e.position, !0), e.position++, !0;
-      if (I === 92) {
-        if (z(e, f, e.position, !0), I = e.input.charCodeAt(++e.position), H(I))
-          V(e, !1, s);
-        else if (I < 256 && E[I])
-          e.result += w[I], e.position++;
-        else if ((C = le(I)) > 0) {
-          let a = C, l = 0;
-          for (; a > 0; a--)
-            I = e.input.charCodeAt(++e.position), (C = pe(I)) >= 0 ? l = (l << 4) + C : y(e, "expected hexadecimal character");
-          e.result += ge(l), e.position++;
-        } else
-          y(e, "unknown escape sequence");
-        f = g = e.position;
-      } else H(I) ? (z(e, f, g, !0), ie(e, V(e, !1, s)), f = g = e.position) : e.position === e.lineStart && Ie(e) ? y(e, "unexpected end of the document within a double quoted scalar") : (e.position++, W(I) || (g = e.position));
-    }
-    y(e, "unexpected end of the stream within a double quoted scalar");
-  }
-  function Fe(e, s) {
-    let f = !0, g, C, I;
-    const a = e.tag;
-    let l;
-    const v = e.anchor;
-    let h, T, L, S;
-    const R = /* @__PURE__ */ Object.create(null);
-    let b, P, x, F = e.input.charCodeAt(e.position);
-    if (F === 91)
-      h = 93, S = !1, l = [];
-    else if (F === 123)
-      h = 125, S = !0, l = {};
-    else
-      return !1;
-    for (e.anchor !== null && Q(e, e.anchor, l), F = e.input.charCodeAt(++e.position); F !== 0; ) {
-      if (V(e, !0, s), F = e.input.charCodeAt(e.position), F === h)
-        return e.position++, e.tag = a, e.anchor = v, e.kind = S ? "mapping" : "sequence", e.result = l, !0;
-      if (f ? F === 44 && y(e, "expected the node content, but found ','") : y(e, "missed comma between flow collection entries"), P = b = x = null, T = L = !1, F === 63) {
-        const U = e.input.charCodeAt(e.position + 1);
-        X(U) && (T = L = !0, e.position++, V(e, !0, s));
-      }
-      g = e.line, C = e.lineStart, I = e.position, te(e, s, u, !1, !0), P = e.tag, b = e.result, V(e, !0, s), F = e.input.charCodeAt(e.position), (L || e.line === g) && F === 58 && (T = !0, F = e.input.charCodeAt(++e.position), V(e, !0, s), te(e, s, u, !1, !0), x = e.result), S ? re(e, l, R, P, b, x, g, C, I) : T ? l.push(re(e, null, R, P, b, x, g, C, I)) : l.push(b), V(e, !0, s), F = e.input.charCodeAt(e.position), F === 44 ? (f = !0, F = e.input.charCodeAt(++e.position)) : f = !1;
-    }
-    y(e, "unexpected end of the stream within a flow collection");
-  }
-  function Oe(e, s) {
-    let f, g = o, C = !1, I = !1, a = s, l = 0, v = !1, h, T = e.input.charCodeAt(e.position);
-    if (T === 124)
-      f = !1;
-    else if (T === 62)
-      f = !0;
-    else
-      return !1;
-    for (e.kind = "scalar", e.result = ""; T !== 0; )
-      if (T = e.input.charCodeAt(++e.position), T === 43 || T === 45)
-        o === g ? g = T === 43 ? D : c : y(e, "repeat of a chomping mode identifier");
-      else if ((h = oe(T)) >= 0)
-        h === 0 ? y(e, "bad explicit indentation width of a block scalar; it cannot be less than one") : I ? y(e, "repeat of an indentation width identifier") : (a = s + h - 1, I = !0);
-      else
-        break;
-    if (W(T)) {
-      do
-        T = e.input.charCodeAt(++e.position);
-      while (W(T));
-      if (T === 35)
-        do
-          T = e.input.charCodeAt(++e.position);
-        while (!H(T) && T !== 0);
-    }
-    for (; T !== 0; ) {
-      for (Le(e), e.lineIndent = 0, T = e.input.charCodeAt(e.position); (!I || e.lineIndent < a) && T === 32; )
-        e.lineIndent++, T = e.input.charCodeAt(++e.position);
-      if (!I && e.lineIndent > a && (a = e.lineIndent), H(T)) {
-        l++;
-        continue;
-      }
-      if (!I && a === 0 && y(e, "missing indentation for block scalar"), e.lineIndent < a) {
-        g === D ? e.result += n.repeat(`
-`, C ? 1 + l : l) : g === o && C && (e.result += `
-`);
-        break;
-      }
-      f ? W(T) ? (v = !0, e.result += n.repeat(`
-`, C ? 1 + l : l)) : v ? (v = !1, e.result += n.repeat(`
-`, l + 1)) : l === 0 ? C && (e.result += " ") : e.result += n.repeat(`
-`, l) : e.result += n.repeat(`
-`, C ? 1 + l : l), C = !0, I = !0, l = 0;
-      const L = e.position;
-      for (; !H(T) && T !== 0; )
-        T = e.input.charCodeAt(++e.position);
-      z(e, L, e.position, !1);
-    }
-    return !0;
-  }
-  function ne(e, s) {
-    const f = e.tag, g = e.anchor, C = [];
-    let I = !1;
-    if (e.firstTabInLine !== -1) return !1;
-    e.anchor !== null && Q(e, e.anchor, C);
-    let a = e.input.charCodeAt(e.position);
-    for (; a !== 0 && (e.firstTabInLine !== -1 && (e.position = e.firstTabInLine, y(e, "tab characters must not be used in indentation")), a === 45); ) {
-      const l = e.input.charCodeAt(e.position + 1);
-      if (!X(l))
-        break;
-      if (I = !0, e.position++, V(e, !0, -1) && e.lineIndent <= s) {
-        C.push(null), a = e.input.charCodeAt(e.position);
-        continue;
-      }
-      const v = e.line;
-      if (te(e, s, m, !1, !0), C.push(e.result), V(e, !0, -1), a = e.input.charCodeAt(e.position), (e.line === v || e.lineIndent > s) && a !== 0)
-        y(e, "bad indentation of a sequence entry");
-      else if (e.lineIndent < s)
-        break;
-    }
-    return I ? (e.tag = f, e.anchor = g, e.kind = "sequence", e.result = C, !0) : !1;
-  }
-  function Ee(e, s, f) {
-    let g, C, I, a;
-    const l = e.tag, v = e.anchor, h = {}, T = /* @__PURE__ */ Object.create(null);
-    let L = null, S = null, R = null, b = !1, P = !1;
-    if (e.firstTabInLine !== -1) return !1;
-    e.anchor !== null && Q(e, e.anchor, h);
-    let x = e.input.charCodeAt(e.position);
-    for (; x !== 0; ) {
-      !b && e.firstTabInLine !== -1 && (e.position = e.firstTabInLine, y(e, "tab characters must not be used in indentation"));
-      const F = e.input.charCodeAt(e.position + 1), U = e.line;
-      if ((x === 63 || x === 58) && X(F))
-        x === 63 ? (b && (re(e, h, T, L, S, null, C, I, a), L = S = R = null), P = !0, b = !0, g = !0) : b ? (b = !1, g = !0) : y(e, "incomplete explicit mapping pair; a key node is missed; or followed by a non-tabulated empty line"), e.position += 1, x = F;
-      else {
-        if (C = e.line, I = e.lineStart, a = e.position, !te(e, f, p, !1, !0))
-          break;
-        if (e.line === U) {
-          for (x = e.input.charCodeAt(e.position); W(x); )
-            x = e.input.charCodeAt(++e.position);
-          if (x === 58)
-            x = e.input.charCodeAt(++e.position), X(x) || y(e, "a whitespace character is expected after the key-value separator within a block mapping"), b && (re(e, h, T, L, S, null, C, I, a), L = S = R = null), P = !0, b = !1, g = !1, L = e.tag, S = e.result;
-          else if (P)
-            y(e, "can not read an implicit mapping pair; a colon is missed");
-          else
-            return e.tag = l, e.anchor = v, !0;
-        } else if (P)
-          y(e, "can not read a block mapping entry; a multiline key may not be an implicit key");
-        else
-          return e.tag = l, e.anchor = v, !0;
-      }
-      if ((e.line === U || e.lineIndent > s) && (b && (C = e.line, I = e.lineStart, a = e.position), te(e, s, N, !0, g) && (b ? S = e.result : R = e.result), b || (re(e, h, T, L, S, R, C, I, a), L = S = R = null), V(e, !0, -1), x = e.input.charCodeAt(e.position)), (e.line === U || e.lineIndent > s) && x !== 0)
-        y(e, "bad indentation of a mapping entry");
-      else if (e.lineIndent < s)
-        break;
-    }
-    return b && re(e, h, T, L, S, null, C, I, a), P && (e.tag = l, e.anchor = v, e.kind = "mapping", e.result = h), P;
-  }
-  function Ge(e) {
-    let s = !1, f = !1, g, C, I = e.input.charCodeAt(e.position);
-    if (I !== 33) return !1;
-    e.tag !== null && y(e, "duplication of a tag property"), I = e.input.charCodeAt(++e.position), I === 60 ? (s = !0, I = e.input.charCodeAt(++e.position)) : I === 33 ? (f = !0, g = "!!", I = e.input.charCodeAt(++e.position)) : g = "!";
-    let a = e.position;
-    if (s) {
-      do
-        I = e.input.charCodeAt(++e.position);
-      while (I !== 0 && I !== 62);
-      e.position < e.length ? (C = e.input.slice(a, e.position), I = e.input.charCodeAt(++e.position)) : y(e, "unexpected end of the stream within a verbatim tag");
     } else {
-      for (; I !== 0 && !X(I); )
-        I === 33 && (f ? y(e, "tag suffix cannot contain exclamation marks") : (g = e.input.slice(a - 1, e.position + 1), _.test(g) || y(e, "named tag handle cannot contain such characters"), f = !0, a = e.position + 1)), I = e.input.charCodeAt(++e.position);
-      C = e.input.slice(a, e.position), j.test(C) && y(e, "tag suffix cannot contain flow indicator characters");
-    }
-    C && !q.test(C) && y(e, "tag name cannot contain such characters: " + C);
-    try {
-      C = decodeURIComponent(C);
-    } catch {
-      y(e, "tag name is malformed: " + C);
-    }
-    return s ? e.tag = C : t.call(e.tagMap, g) ? e.tag = e.tagMap[g] + C : g === "!" ? e.tag = "!" + C : g === "!!" ? e.tag = "tag:yaml.org,2002:" + C : y(e, 'undeclared tag handle "' + g + '"'), !0;
-  }
-  function Ue(e) {
-    let s = e.input.charCodeAt(e.position);
-    if (s !== 38) return !1;
-    e.anchor !== null && y(e, "duplication of an anchor property"), s = e.input.charCodeAt(++e.position);
-    const f = e.position;
-    for (; s !== 0 && !X(s) && !$(s); )
-      s = e.input.charCodeAt(++e.position);
-    return e.position === f && y(e, "name of an anchor node must contain at least one character"), e.anchor = e.input.slice(f, e.position), !0;
-  }
-  function He(e) {
-    let s = e.input.charCodeAt(e.position);
-    if (s !== 42) return !1;
-    s = e.input.charCodeAt(++e.position);
-    const f = e.position;
-    for (; s !== 0 && !X(s) && !$(s); )
-      s = e.input.charCodeAt(++e.position);
-    e.position === f && y(e, "name of an alias node must contain at least one character");
-    const g = e.input.slice(f, e.position);
-    return t.call(e.anchorMap, g) || y(e, 'unidentified alias "' + g + '"'), e.result = e.anchorMap[g], V(e, !0, -1), !0;
-  }
-  function ze(e, s, f, g) {
-    const C = ce(e);
-    return de(e), Ce(e, s), e.tag = null, e.anchor = null, e.kind = null, e.result = null, Ee(e, f, g) && e.kind === "mapping" ? (ae(e), !0) : (Se(e), Ce(e, C), !1);
-  }
-  function te(e, s, f, g, C) {
-    let I, a, l = 1, v = !1, h = !1, T = null, L, S, R;
-    e.depth >= e.maxDepth && y(e, "nesting exceeded maxDepth (" + e.maxDepth + ")"), e.depth += 1, e.listener !== null && e.listener("open", e), e.tag = null, e.anchor = null, e.kind = null, e.result = null;
-    const b = I = a = N === f || m === f;
-    if (g && V(e, !0, -1) && (v = !0, e.lineIndent > s ? l = 1 : e.lineIndent === s ? l = 0 : e.lineIndent < s && (l = -1)), l === 1)
-      for (; ; ) {
-        const P = e.input.charCodeAt(e.position), x = ce(e);
-        if (v && (P === 33 && e.tag !== null || P === 38 && e.anchor !== null) || !Ge(e) && !Ue(e))
-          break;
-        T === null && (T = x), V(e, !0, -1) ? (v = !0, a = b, e.lineIndent > s ? l = 1 : e.lineIndent === s ? l = 0 : e.lineIndent < s && (l = -1)) : a = !1;
+      if (!state.json && !_hasOwnProperty.call(overridableKeys, keyNode) && _hasOwnProperty.call(_result, keyNode)) {
+        state.line = startLine || state.line;
+        state.lineStart = startLineStart || state.lineStart;
+        state.position = startPos || state.position;
+        throwError(state, "duplicated mapping key");
       }
-    if (a && (a = v || C), l === 1 || N === f)
-      if (u === f || p === f ? S = s : S = s + 1, R = e.position - e.lineStart, l === 1)
-        if (a && (ne(e, R) || Ee(e, R, S)) || Fe(e, S))
-          h = !0;
-        else {
-          const P = e.input.charCodeAt(e.position);
-          T !== null && b && !a && P !== 124 && P !== 62 && ze(
-            e,
-            T,
-            T.position - T.lineStart,
-            S
-          ) || I && Oe(e, S) || we(e, S) || ye(e, S) ? h = !0 : He(e) ? (h = !0, (e.tag !== null || e.anchor !== null) && y(e, "alias node should not have any properties")) : Me(e, S, u === f) && (h = !0, e.tag === null && (e.tag = "?")), e.anchor !== null && Q(e, e.anchor, e.result);
+      setProperty(_result, keyNode, valueNode);
+      delete overridableKeys[keyNode];
+    }
+    return _result;
+  }
+  function readLineBreak(state) {
+    const ch = state.input.charCodeAt(state.position);
+    if (ch === 10) {
+      state.position++;
+    } else if (ch === 13) {
+      state.position++;
+      if (state.input.charCodeAt(state.position) === 10) {
+        state.position++;
+      }
+    } else {
+      throwError(state, "a line break is expected");
+    }
+    state.line += 1;
+    state.lineStart = state.position;
+    state.firstTabInLine = -1;
+  }
+  function skipSeparationSpace(state, allowComments, checkIndent) {
+    let lineBreaks = 0;
+    let ch = state.input.charCodeAt(state.position);
+    while (ch !== 0) {
+      while (isWhiteSpace(ch)) {
+        if (ch === 9 && state.firstTabInLine === -1) {
+          state.firstTabInLine = state.position;
         }
-      else l === 0 && (h = a && ne(e, R));
-    if (e.tag === null)
-      e.anchor !== null && Q(e, e.anchor, e.result);
-    else if (e.tag === "?") {
-      e.result !== null && e.kind !== "scalar" && y(e, 'unacceptable node kind for !<?> tag; it should be "scalar", not "' + e.kind + '"');
-      for (let P = 0, x = e.implicitTypes.length; P < x; P += 1)
-        if (L = e.implicitTypes[P], L.resolve(e.result)) {
-          e.result = L.construct(e.result), e.tag = L.tag, e.anchor !== null && Q(e, e.anchor, e.result);
+        ch = state.input.charCodeAt(++state.position);
+      }
+      if (allowComments && ch === 35) {
+        do {
+          ch = state.input.charCodeAt(++state.position);
+        } while (ch !== 10 && ch !== 13 && ch !== 0);
+      }
+      if (isEol(ch)) {
+        readLineBreak(state);
+        ch = state.input.charCodeAt(state.position);
+        lineBreaks++;
+        state.lineIndent = 0;
+        while (ch === 32) {
+          state.lineIndent++;
+          ch = state.input.charCodeAt(++state.position);
+        }
+      } else {
+        break;
+      }
+    }
+    if (checkIndent !== -1 && lineBreaks !== 0 && state.lineIndent < checkIndent) {
+      throwWarning(state, "deficient indentation");
+    }
+    return lineBreaks;
+  }
+  function testDocumentSeparator(state) {
+    let _position = state.position;
+    let ch = state.input.charCodeAt(_position);
+    if ((ch === 45 || ch === 46) && ch === state.input.charCodeAt(_position + 1) && ch === state.input.charCodeAt(_position + 2)) {
+      _position += 3;
+      ch = state.input.charCodeAt(_position);
+      if (ch === 0 || isWsOrEol(ch)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function writeFoldedLines(state, count) {
+    if (count === 1) {
+      state.result += " ";
+    } else if (count > 1) {
+      state.result += common2.repeat("\n", count - 1);
+    }
+  }
+  function readPlainScalar(state, nodeIndent, withinFlowCollection) {
+    let captureStart;
+    let captureEnd;
+    let hasPendingContent;
+    let _line;
+    let _lineStart;
+    let _lineIndent;
+    const _kind = state.kind;
+    const _result = state.result;
+    let ch = state.input.charCodeAt(state.position);
+    if (isWsOrEol(ch) || isFlowIndicator(ch) || ch === 35 || ch === 38 || ch === 42 || ch === 33 || ch === 124 || ch === 62 || ch === 39 || ch === 34 || ch === 37 || ch === 64 || ch === 96) {
+      return false;
+    }
+    if (ch === 63 || ch === 45) {
+      const following = state.input.charCodeAt(state.position + 1);
+      if (isWsOrEol(following) || withinFlowCollection && isFlowIndicator(following)) {
+        return false;
+      }
+    }
+    state.kind = "scalar";
+    state.result = "";
+    captureStart = captureEnd = state.position;
+    hasPendingContent = false;
+    while (ch !== 0) {
+      if (ch === 58) {
+        const following = state.input.charCodeAt(state.position + 1);
+        if (isWsOrEol(following) || withinFlowCollection && isFlowIndicator(following)) {
           break;
         }
-    } else if (e.tag !== "!") {
-      if (t.call(e.typeMap[e.kind || "fallback"], e.tag))
-        L = e.typeMap[e.kind || "fallback"][e.tag];
-      else {
-        L = null;
-        const P = e.typeMap.multi[e.kind || "fallback"];
-        for (let x = 0, F = P.length; x < F; x += 1)
-          if (e.tag.slice(0, P[x].tag.length) === P[x].tag) {
-            L = P[x];
+      } else if (ch === 35) {
+        const preceding = state.input.charCodeAt(state.position - 1);
+        if (isWsOrEol(preceding)) {
+          break;
+        }
+      } else if (state.position === state.lineStart && testDocumentSeparator(state) || withinFlowCollection && isFlowIndicator(ch)) {
+        break;
+      } else if (isEol(ch)) {
+        _line = state.line;
+        _lineStart = state.lineStart;
+        _lineIndent = state.lineIndent;
+        skipSeparationSpace(state, false, -1);
+        if (state.lineIndent >= nodeIndent) {
+          hasPendingContent = true;
+          ch = state.input.charCodeAt(state.position);
+          continue;
+        } else {
+          state.position = captureEnd;
+          state.line = _line;
+          state.lineStart = _lineStart;
+          state.lineIndent = _lineIndent;
+          break;
+        }
+      }
+      if (hasPendingContent) {
+        captureSegment(state, captureStart, captureEnd, false);
+        writeFoldedLines(state, state.line - _line);
+        captureStart = captureEnd = state.position;
+        hasPendingContent = false;
+      }
+      if (!isWhiteSpace(ch)) {
+        captureEnd = state.position + 1;
+      }
+      ch = state.input.charCodeAt(++state.position);
+    }
+    captureSegment(state, captureStart, captureEnd, false);
+    if (state.result) {
+      return true;
+    }
+    state.kind = _kind;
+    state.result = _result;
+    return false;
+  }
+  function readSingleQuotedScalar(state, nodeIndent) {
+    let captureStart;
+    let captureEnd;
+    let ch = state.input.charCodeAt(state.position);
+    if (ch !== 39) {
+      return false;
+    }
+    state.kind = "scalar";
+    state.result = "";
+    state.position++;
+    captureStart = captureEnd = state.position;
+    while ((ch = state.input.charCodeAt(state.position)) !== 0) {
+      if (ch === 39) {
+        captureSegment(state, captureStart, state.position, true);
+        ch = state.input.charCodeAt(++state.position);
+        if (ch === 39) {
+          captureStart = state.position;
+          state.position++;
+          captureEnd = state.position;
+        } else {
+          return true;
+        }
+      } else if (isEol(ch)) {
+        captureSegment(state, captureStart, captureEnd, true);
+        writeFoldedLines(state, skipSeparationSpace(state, false, nodeIndent));
+        captureStart = captureEnd = state.position;
+      } else if (state.position === state.lineStart && testDocumentSeparator(state)) {
+        throwError(state, "unexpected end of the document within a single quoted scalar");
+      } else {
+        state.position++;
+        if (!isWhiteSpace(ch)) {
+          captureEnd = state.position;
+        }
+      }
+    }
+    throwError(state, "unexpected end of the stream within a single quoted scalar");
+  }
+  function readDoubleQuotedScalar(state, nodeIndent) {
+    let captureStart;
+    let captureEnd;
+    let tmp;
+    let ch = state.input.charCodeAt(state.position);
+    if (ch !== 34) {
+      return false;
+    }
+    state.kind = "scalar";
+    state.result = "";
+    state.position++;
+    captureStart = captureEnd = state.position;
+    while ((ch = state.input.charCodeAt(state.position)) !== 0) {
+      if (ch === 34) {
+        captureSegment(state, captureStart, state.position, true);
+        state.position++;
+        return true;
+      } else if (ch === 92) {
+        captureSegment(state, captureStart, state.position, true);
+        ch = state.input.charCodeAt(++state.position);
+        if (isEol(ch)) {
+          skipSeparationSpace(state, false, nodeIndent);
+        } else if (ch < 256 && simpleEscapeCheck[ch]) {
+          state.result += simpleEscapeMap[ch];
+          state.position++;
+        } else if ((tmp = escapedHexLen(ch)) > 0) {
+          let hexLength = tmp;
+          let hexResult = 0;
+          for (; hexLength > 0; hexLength--) {
+            ch = state.input.charCodeAt(++state.position);
+            if ((tmp = fromHexCode(ch)) >= 0) {
+              hexResult = (hexResult << 4) + tmp;
+            } else {
+              throwError(state, "expected hexadecimal character");
+            }
+          }
+          state.result += charFromCodepoint(hexResult);
+          state.position++;
+        } else {
+          throwError(state, "unknown escape sequence");
+        }
+        captureStart = captureEnd = state.position;
+      } else if (isEol(ch)) {
+        captureSegment(state, captureStart, captureEnd, true);
+        writeFoldedLines(state, skipSeparationSpace(state, false, nodeIndent));
+        captureStart = captureEnd = state.position;
+      } else if (state.position === state.lineStart && testDocumentSeparator(state)) {
+        throwError(state, "unexpected end of the document within a double quoted scalar");
+      } else {
+        state.position++;
+        if (!isWhiteSpace(ch)) {
+          captureEnd = state.position;
+        }
+      }
+    }
+    throwError(state, "unexpected end of the stream within a double quoted scalar");
+  }
+  function readFlowCollection(state, nodeIndent) {
+    let readNext = true;
+    let _line;
+    let _lineStart;
+    let _pos;
+    const _tag = state.tag;
+    let _result;
+    const _anchor = state.anchor;
+    let terminator;
+    let isPair;
+    let isExplicitPair;
+    let isMapping;
+    const overridableKeys = /* @__PURE__ */ Object.create(null);
+    let keyNode;
+    let keyTag;
+    let valueNode;
+    let ch = state.input.charCodeAt(state.position);
+    if (ch === 91) {
+      terminator = 93;
+      isMapping = false;
+      _result = [];
+    } else if (ch === 123) {
+      terminator = 125;
+      isMapping = true;
+      _result = {};
+    } else {
+      return false;
+    }
+    if (state.anchor !== null) {
+      storeAnchor(state, state.anchor, _result);
+    }
+    ch = state.input.charCodeAt(++state.position);
+    while (ch !== 0) {
+      skipSeparationSpace(state, true, nodeIndent);
+      ch = state.input.charCodeAt(state.position);
+      if (ch === terminator) {
+        state.position++;
+        state.tag = _tag;
+        state.anchor = _anchor;
+        state.kind = isMapping ? "mapping" : "sequence";
+        state.result = _result;
+        return true;
+      } else if (!readNext) {
+        throwError(state, "missed comma between flow collection entries");
+      } else if (ch === 44) {
+        throwError(state, "expected the node content, but found ','");
+      }
+      keyTag = keyNode = valueNode = null;
+      isPair = isExplicitPair = false;
+      if (ch === 63) {
+        const following = state.input.charCodeAt(state.position + 1);
+        if (isWsOrEol(following)) {
+          isPair = isExplicitPair = true;
+          state.position++;
+          skipSeparationSpace(state, true, nodeIndent);
+        }
+      }
+      _line = state.line;
+      _lineStart = state.lineStart;
+      _pos = state.position;
+      composeNode(state, nodeIndent, CONTEXT_FLOW_IN, false, true);
+      keyTag = state.tag;
+      keyNode = state.result;
+      skipSeparationSpace(state, true, nodeIndent);
+      ch = state.input.charCodeAt(state.position);
+      if ((isExplicitPair || state.line === _line) && ch === 58) {
+        isPair = true;
+        ch = state.input.charCodeAt(++state.position);
+        skipSeparationSpace(state, true, nodeIndent);
+        composeNode(state, nodeIndent, CONTEXT_FLOW_IN, false, true);
+        valueNode = state.result;
+      }
+      if (isMapping) {
+        storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, valueNode, _line, _lineStart, _pos);
+      } else if (isPair) {
+        _result.push(storeMappingPair(state, null, overridableKeys, keyTag, keyNode, valueNode, _line, _lineStart, _pos));
+      } else {
+        _result.push(keyNode);
+      }
+      skipSeparationSpace(state, true, nodeIndent);
+      ch = state.input.charCodeAt(state.position);
+      if (ch === 44) {
+        readNext = true;
+        ch = state.input.charCodeAt(++state.position);
+      } else {
+        readNext = false;
+      }
+    }
+    throwError(state, "unexpected end of the stream within a flow collection");
+  }
+  function readBlockScalar(state, nodeIndent) {
+    let folding;
+    let chomping = CHOMPING_CLIP;
+    let didReadContent = false;
+    let detectedIndent = false;
+    let textIndent = nodeIndent;
+    let emptyLines = 0;
+    let atMoreIndented = false;
+    let tmp;
+    let ch = state.input.charCodeAt(state.position);
+    if (ch === 124) {
+      folding = false;
+    } else if (ch === 62) {
+      folding = true;
+    } else {
+      return false;
+    }
+    state.kind = "scalar";
+    state.result = "";
+    while (ch !== 0) {
+      ch = state.input.charCodeAt(++state.position);
+      if (ch === 43 || ch === 45) {
+        if (CHOMPING_CLIP === chomping) {
+          chomping = ch === 43 ? CHOMPING_KEEP : CHOMPING_STRIP;
+        } else {
+          throwError(state, "repeat of a chomping mode identifier");
+        }
+      } else if ((tmp = fromDecimalCode(ch)) >= 0) {
+        if (tmp === 0) {
+          throwError(state, "bad explicit indentation width of a block scalar; it cannot be less than one");
+        } else if (!detectedIndent) {
+          textIndent = nodeIndent + tmp - 1;
+          detectedIndent = true;
+        } else {
+          throwError(state, "repeat of an indentation width identifier");
+        }
+      } else {
+        break;
+      }
+    }
+    if (isWhiteSpace(ch)) {
+      do {
+        ch = state.input.charCodeAt(++state.position);
+      } while (isWhiteSpace(ch));
+      if (ch === 35) {
+        do {
+          ch = state.input.charCodeAt(++state.position);
+        } while (!isEol(ch) && ch !== 0);
+      }
+    }
+    while (ch !== 0) {
+      readLineBreak(state);
+      state.lineIndent = 0;
+      ch = state.input.charCodeAt(state.position);
+      while ((!detectedIndent || state.lineIndent < textIndent) && ch === 32) {
+        state.lineIndent++;
+        ch = state.input.charCodeAt(++state.position);
+      }
+      if (!detectedIndent && state.lineIndent > textIndent) {
+        textIndent = state.lineIndent;
+      }
+      if (isEol(ch)) {
+        emptyLines++;
+        continue;
+      }
+      if (!detectedIndent && textIndent === 0) {
+        throwError(state, "missing indentation for block scalar");
+      }
+      if (state.lineIndent < textIndent) {
+        if (chomping === CHOMPING_KEEP) {
+          state.result += common2.repeat("\n", didReadContent ? 1 + emptyLines : emptyLines);
+        } else if (chomping === CHOMPING_CLIP) {
+          if (didReadContent) {
+            state.result += "\n";
+          }
+        }
+        break;
+      }
+      if (folding) {
+        if (isWhiteSpace(ch)) {
+          atMoreIndented = true;
+          state.result += common2.repeat("\n", didReadContent ? 1 + emptyLines : emptyLines);
+        } else if (atMoreIndented) {
+          atMoreIndented = false;
+          state.result += common2.repeat("\n", emptyLines + 1);
+        } else if (emptyLines === 0) {
+          if (didReadContent) {
+            state.result += " ";
+          }
+        } else {
+          state.result += common2.repeat("\n", emptyLines);
+        }
+      } else {
+        state.result += common2.repeat("\n", didReadContent ? 1 + emptyLines : emptyLines);
+      }
+      didReadContent = true;
+      detectedIndent = true;
+      emptyLines = 0;
+      const captureStart = state.position;
+      while (!isEol(ch) && ch !== 0) {
+        ch = state.input.charCodeAt(++state.position);
+      }
+      captureSegment(state, captureStart, state.position, false);
+    }
+    return true;
+  }
+  function readBlockSequence(state, nodeIndent) {
+    const _tag = state.tag;
+    const _anchor = state.anchor;
+    const _result = [];
+    let detected = false;
+    if (state.firstTabInLine !== -1) return false;
+    if (state.anchor !== null) {
+      storeAnchor(state, state.anchor, _result);
+    }
+    let ch = state.input.charCodeAt(state.position);
+    while (ch !== 0) {
+      if (state.firstTabInLine !== -1) {
+        state.position = state.firstTabInLine;
+        throwError(state, "tab characters must not be used in indentation");
+      }
+      if (ch !== 45) {
+        break;
+      }
+      const following = state.input.charCodeAt(state.position + 1);
+      if (!isWsOrEol(following)) {
+        break;
+      }
+      detected = true;
+      state.position++;
+      if (skipSeparationSpace(state, true, -1)) {
+        if (state.lineIndent <= nodeIndent) {
+          _result.push(null);
+          ch = state.input.charCodeAt(state.position);
+          continue;
+        }
+      }
+      const _line = state.line;
+      composeNode(state, nodeIndent, CONTEXT_BLOCK_IN, false, true);
+      _result.push(state.result);
+      skipSeparationSpace(state, true, -1);
+      ch = state.input.charCodeAt(state.position);
+      if ((state.line === _line || state.lineIndent > nodeIndent) && ch !== 0) {
+        throwError(state, "bad indentation of a sequence entry");
+      } else if (state.lineIndent < nodeIndent) {
+        break;
+      }
+    }
+    if (detected) {
+      state.tag = _tag;
+      state.anchor = _anchor;
+      state.kind = "sequence";
+      state.result = _result;
+      return true;
+    }
+    return false;
+  }
+  function readBlockMapping(state, nodeIndent, flowIndent) {
+    let allowCompact;
+    let _keyLine;
+    let _keyLineStart;
+    let _keyPos;
+    const _tag = state.tag;
+    const _anchor = state.anchor;
+    const _result = {};
+    const overridableKeys = /* @__PURE__ */ Object.create(null);
+    let keyTag = null;
+    let keyNode = null;
+    let valueNode = null;
+    let atExplicitKey = false;
+    let detected = false;
+    if (state.firstTabInLine !== -1) return false;
+    if (state.anchor !== null) {
+      storeAnchor(state, state.anchor, _result);
+    }
+    let ch = state.input.charCodeAt(state.position);
+    while (ch !== 0) {
+      if (!atExplicitKey && state.firstTabInLine !== -1) {
+        state.position = state.firstTabInLine;
+        throwError(state, "tab characters must not be used in indentation");
+      }
+      const following = state.input.charCodeAt(state.position + 1);
+      const _line = state.line;
+      if ((ch === 63 || ch === 58) && isWsOrEol(following)) {
+        if (ch === 63) {
+          if (atExplicitKey) {
+            storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, null, _keyLine, _keyLineStart, _keyPos);
+            keyTag = keyNode = valueNode = null;
+          }
+          detected = true;
+          atExplicitKey = true;
+          allowCompact = true;
+        } else if (atExplicitKey) {
+          atExplicitKey = false;
+          allowCompact = true;
+        } else {
+          throwError(state, "incomplete explicit mapping pair; a key node is missed; or followed by a non-tabulated empty line");
+        }
+        state.position += 1;
+        ch = following;
+      } else {
+        _keyLine = state.line;
+        _keyLineStart = state.lineStart;
+        _keyPos = state.position;
+        if (!composeNode(state, flowIndent, CONTEXT_FLOW_OUT, false, true)) {
+          break;
+        }
+        if (state.line === _line) {
+          ch = state.input.charCodeAt(state.position);
+          while (isWhiteSpace(ch)) {
+            ch = state.input.charCodeAt(++state.position);
+          }
+          if (ch === 58) {
+            ch = state.input.charCodeAt(++state.position);
+            if (!isWsOrEol(ch)) {
+              throwError(state, "a whitespace character is expected after the key-value separator within a block mapping");
+            }
+            if (atExplicitKey) {
+              storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, null, _keyLine, _keyLineStart, _keyPos);
+              keyTag = keyNode = valueNode = null;
+            }
+            detected = true;
+            atExplicitKey = false;
+            allowCompact = false;
+            keyTag = state.tag;
+            keyNode = state.result;
+          } else if (detected) {
+            throwError(state, "can not read an implicit mapping pair; a colon is missed");
+          } else {
+            state.tag = _tag;
+            state.anchor = _anchor;
+            return true;
+          }
+        } else if (detected) {
+          throwError(state, "can not read a block mapping entry; a multiline key may not be an implicit key");
+        } else {
+          state.tag = _tag;
+          state.anchor = _anchor;
+          return true;
+        }
+      }
+      if (state.line === _line || state.lineIndent > nodeIndent) {
+        if (atExplicitKey) {
+          _keyLine = state.line;
+          _keyLineStart = state.lineStart;
+          _keyPos = state.position;
+        }
+        if (composeNode(state, nodeIndent, CONTEXT_BLOCK_OUT, true, allowCompact)) {
+          if (atExplicitKey) {
+            keyNode = state.result;
+          } else {
+            valueNode = state.result;
+          }
+        }
+        if (!atExplicitKey) {
+          storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, valueNode, _keyLine, _keyLineStart, _keyPos);
+          keyTag = keyNode = valueNode = null;
+        }
+        skipSeparationSpace(state, true, -1);
+        ch = state.input.charCodeAt(state.position);
+      }
+      if ((state.line === _line || state.lineIndent > nodeIndent) && ch !== 0) {
+        throwError(state, "bad indentation of a mapping entry");
+      } else if (state.lineIndent < nodeIndent) {
+        break;
+      }
+    }
+    if (atExplicitKey) {
+      storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, null, _keyLine, _keyLineStart, _keyPos);
+    }
+    if (detected) {
+      state.tag = _tag;
+      state.anchor = _anchor;
+      state.kind = "mapping";
+      state.result = _result;
+    }
+    return detected;
+  }
+  function readTagProperty(state) {
+    let isVerbatim = false;
+    let isNamed = false;
+    let tagHandle;
+    let tagName;
+    let ch = state.input.charCodeAt(state.position);
+    if (ch !== 33) return false;
+    if (state.tag !== null) {
+      throwError(state, "duplication of a tag property");
+    }
+    ch = state.input.charCodeAt(++state.position);
+    if (ch === 60) {
+      isVerbatim = true;
+      ch = state.input.charCodeAt(++state.position);
+    } else if (ch === 33) {
+      isNamed = true;
+      tagHandle = "!!";
+      ch = state.input.charCodeAt(++state.position);
+    } else {
+      tagHandle = "!";
+    }
+    let _position = state.position;
+    if (isVerbatim) {
+      do {
+        ch = state.input.charCodeAt(++state.position);
+      } while (ch !== 0 && ch !== 62);
+      if (state.position < state.length) {
+        tagName = state.input.slice(_position, state.position);
+        ch = state.input.charCodeAt(++state.position);
+      } else {
+        throwError(state, "unexpected end of the stream within a verbatim tag");
+      }
+    } else {
+      while (ch !== 0 && !isWsOrEol(ch)) {
+        if (ch === 33) {
+          if (!isNamed) {
+            tagHandle = state.input.slice(_position - 1, state.position + 1);
+            if (!PATTERN_TAG_HANDLE.test(tagHandle)) {
+              throwError(state, "named tag handle cannot contain such characters");
+            }
+            isNamed = true;
+            _position = state.position + 1;
+          } else {
+            throwError(state, "tag suffix cannot contain exclamation marks");
+          }
+        }
+        ch = state.input.charCodeAt(++state.position);
+      }
+      tagName = state.input.slice(_position, state.position);
+      if (PATTERN_FLOW_INDICATORS.test(tagName)) {
+        throwError(state, "tag suffix cannot contain flow indicator characters");
+      }
+    }
+    if (tagName && !PATTERN_TAG_URI.test(tagName)) {
+      throwError(state, "tag name cannot contain such characters: " + tagName);
+    }
+    try {
+      tagName = decodeURIComponent(tagName);
+    } catch (err) {
+      throwError(state, "tag name is malformed: " + tagName);
+    }
+    if (isVerbatim) {
+      state.tag = tagName;
+    } else if (_hasOwnProperty.call(state.tagMap, tagHandle)) {
+      state.tag = state.tagMap[tagHandle] + tagName;
+    } else if (tagHandle === "!") {
+      state.tag = "!" + tagName;
+    } else if (tagHandle === "!!") {
+      state.tag = "tag:yaml.org,2002:" + tagName;
+    } else {
+      throwError(state, 'undeclared tag handle "' + tagHandle + '"');
+    }
+    return true;
+  }
+  function readAnchorProperty(state) {
+    let ch = state.input.charCodeAt(state.position);
+    if (ch !== 38) return false;
+    if (state.anchor !== null) {
+      throwError(state, "duplication of an anchor property");
+    }
+    ch = state.input.charCodeAt(++state.position);
+    const _position = state.position;
+    while (ch !== 0 && !isWsOrEol(ch) && !isFlowIndicator(ch)) {
+      ch = state.input.charCodeAt(++state.position);
+    }
+    if (state.position === _position) {
+      throwError(state, "name of an anchor node must contain at least one character");
+    }
+    state.anchor = state.input.slice(_position, state.position);
+    return true;
+  }
+  function readAlias(state) {
+    let ch = state.input.charCodeAt(state.position);
+    if (ch !== 42) return false;
+    ch = state.input.charCodeAt(++state.position);
+    const _position = state.position;
+    while (ch !== 0 && !isWsOrEol(ch) && !isFlowIndicator(ch)) {
+      ch = state.input.charCodeAt(++state.position);
+    }
+    if (state.position === _position) {
+      throwError(state, "name of an alias node must contain at least one character");
+    }
+    const alias = state.input.slice(_position, state.position);
+    if (!_hasOwnProperty.call(state.anchorMap, alias)) {
+      throwError(state, 'unidentified alias "' + alias + '"');
+    }
+    state.result = state.anchorMap[alias];
+    skipSeparationSpace(state, true, -1);
+    return true;
+  }
+  function tryReadBlockMappingFromProperty(state, propertyStart, nodeIndent, flowIndent) {
+    const fallbackState = snapshotState(state);
+    beginAnchorTransaction(state);
+    restoreState(state, propertyStart);
+    state.tag = null;
+    state.anchor = null;
+    state.kind = null;
+    state.result = null;
+    if (readBlockMapping(state, nodeIndent, flowIndent) && state.kind === "mapping") {
+      commitAnchorTransaction(state);
+      return true;
+    }
+    rollbackAnchorTransaction(state);
+    restoreState(state, fallbackState);
+    return false;
+  }
+  function composeNode(state, parentIndent, nodeContext, allowToSeek, allowCompact) {
+    let allowBlockScalars;
+    let allowBlockCollections;
+    let indentStatus = 1;
+    let atNewLine = false;
+    let hasContent = false;
+    let propertyStart = null;
+    let type2;
+    let flowIndent;
+    let blockIndent;
+    if (state.depth >= state.maxDepth) {
+      throwError(state, "nesting exceeded maxDepth (" + state.maxDepth + ")");
+    }
+    state.depth += 1;
+    if (state.listener !== null) {
+      state.listener("open", state);
+    }
+    state.tag = null;
+    state.anchor = null;
+    state.kind = null;
+    state.result = null;
+    const allowBlockStyles = allowBlockScalars = allowBlockCollections = CONTEXT_BLOCK_OUT === nodeContext || CONTEXT_BLOCK_IN === nodeContext;
+    if (allowToSeek) {
+      if (skipSeparationSpace(state, true, -1)) {
+        atNewLine = true;
+        if (state.lineIndent > parentIndent) {
+          indentStatus = 1;
+        } else if (state.lineIndent === parentIndent) {
+          indentStatus = 0;
+        } else if (state.lineIndent < parentIndent) {
+          indentStatus = -1;
+        }
+      }
+    }
+    if (indentStatus === 1) {
+      while (true) {
+        const ch = state.input.charCodeAt(state.position);
+        const propertyState = snapshotState(state);
+        if (atNewLine && (ch === 33 && state.tag !== null || ch === 38 && state.anchor !== null)) {
+          break;
+        }
+        if (!readTagProperty(state) && !readAnchorProperty(state)) {
+          break;
+        }
+        if (propertyStart === null) {
+          propertyStart = propertyState;
+        }
+        if (skipSeparationSpace(state, true, -1)) {
+          atNewLine = true;
+          allowBlockCollections = allowBlockStyles;
+          if (state.lineIndent > parentIndent) {
+            indentStatus = 1;
+          } else if (state.lineIndent === parentIndent) {
+            indentStatus = 0;
+          } else if (state.lineIndent < parentIndent) {
+            indentStatus = -1;
+          }
+        } else {
+          allowBlockCollections = false;
+        }
+      }
+    }
+    if (allowBlockCollections) {
+      allowBlockCollections = atNewLine || allowCompact;
+    }
+    if (indentStatus === 1 || CONTEXT_BLOCK_OUT === nodeContext) {
+      if (CONTEXT_FLOW_IN === nodeContext || CONTEXT_FLOW_OUT === nodeContext) {
+        flowIndent = parentIndent;
+      } else {
+        flowIndent = parentIndent + 1;
+      }
+      blockIndent = state.position - state.lineStart;
+      if (indentStatus === 1) {
+        if (allowBlockCollections && (readBlockSequence(state, blockIndent) || readBlockMapping(state, blockIndent, flowIndent)) || readFlowCollection(state, flowIndent)) {
+          hasContent = true;
+        } else {
+          const ch = state.input.charCodeAt(state.position);
+          if (propertyStart !== null && allowBlockStyles && !allowBlockCollections && ch !== 124 && ch !== 62 && tryReadBlockMappingFromProperty(
+            state,
+            propertyStart,
+            propertyStart.position - propertyStart.lineStart,
+            flowIndent
+          )) {
+            hasContent = true;
+          } else if (allowBlockScalars && readBlockScalar(state, flowIndent) || readSingleQuotedScalar(state, flowIndent) || readDoubleQuotedScalar(state, flowIndent)) {
+            hasContent = true;
+          } else if (readAlias(state)) {
+            hasContent = true;
+            if (state.tag !== null || state.anchor !== null) {
+              throwError(state, "alias node should not have any properties");
+            }
+          } else if (readPlainScalar(state, flowIndent, CONTEXT_FLOW_IN === nodeContext)) {
+            hasContent = true;
+            if (state.tag === null) {
+              state.tag = "?";
+            }
+          }
+          if (state.anchor !== null) {
+            storeAnchor(state, state.anchor, state.result);
+          }
+        }
+      } else if (indentStatus === 0) {
+        hasContent = allowBlockCollections && readBlockSequence(state, blockIndent);
+      }
+    }
+    if (state.tag === null) {
+      if (state.anchor !== null) {
+        storeAnchor(state, state.anchor, state.result);
+      }
+    } else if (state.tag === "?") {
+      if (state.result !== null && state.kind !== "scalar") {
+        throwError(state, 'unacceptable node kind for !<?> tag; it should be "scalar", not "' + state.kind + '"');
+      }
+      for (let typeIndex = 0, typeQuantity = state.implicitTypes.length; typeIndex < typeQuantity; typeIndex += 1) {
+        type2 = state.implicitTypes[typeIndex];
+        if (type2.resolve(state.result)) {
+          state.result = type2.construct(state.result);
+          state.tag = type2.tag;
+          if (state.anchor !== null) {
+            storeAnchor(state, state.anchor, state.result);
+          }
+          break;
+        }
+      }
+    } else if (state.tag !== "!") {
+      if (_hasOwnProperty.call(state.typeMap[state.kind || "fallback"], state.tag)) {
+        type2 = state.typeMap[state.kind || "fallback"][state.tag];
+      } else {
+        type2 = null;
+        const typeList = state.typeMap.multi[state.kind || "fallback"];
+        for (let typeIndex = 0, typeQuantity = typeList.length; typeIndex < typeQuantity; typeIndex += 1) {
+          if (state.tag.slice(0, typeList[typeIndex].tag.length) === typeList[typeIndex].tag) {
+            type2 = typeList[typeIndex];
             break;
           }
+        }
       }
-      L || y(e, "unknown tag !<" + e.tag + ">"), e.result !== null && L.kind !== e.kind && y(e, "unacceptable node kind for !<" + e.tag + '> tag; it should be "' + L.kind + '", not "' + e.kind + '"'), L.resolve(e.result, e.tag) ? (e.result = L.construct(e.result, e.tag), e.anchor !== null && Q(e, e.anchor, e.result)) : y(e, "cannot resolve a node with !<" + e.tag + "> explicit tag");
+      if (!type2) {
+        throwError(state, "unknown tag !<" + state.tag + ">");
+      }
+      if (state.result !== null && type2.kind !== state.kind) {
+        throwError(state, "unacceptable node kind for !<" + state.tag + '> tag; it should be "' + type2.kind + '", not "' + state.kind + '"');
+      }
+      if (!type2.resolve(state.result, state.tag)) {
+        throwError(state, "cannot resolve a node with !<" + state.tag + "> explicit tag");
+      } else {
+        state.result = type2.construct(state.result, state.tag);
+        if (state.anchor !== null) {
+          storeAnchor(state, state.anchor, state.result);
+        }
+      }
     }
-    return e.listener !== null && e.listener("close", e), e.depth -= 1, e.tag !== null || e.anchor !== null || h;
+    if (state.listener !== null) {
+      state.listener("close", state);
+    }
+    state.depth -= 1;
+    return state.tag !== null || state.anchor !== null || hasContent;
   }
-  function Ye(e) {
-    const s = e.position;
-    let f = !1, g;
-    for (e.version = null, e.checkLineBreaks = e.legacy, e.tagMap = /* @__PURE__ */ Object.create(null), e.anchorMap = /* @__PURE__ */ Object.create(null); (g = e.input.charCodeAt(e.position)) !== 0 && (V(e, !0, -1), g = e.input.charCodeAt(e.position), !(e.lineIndent > 0 || g !== 37)); ) {
-      f = !0, g = e.input.charCodeAt(++e.position);
-      let C = e.position;
-      for (; g !== 0 && !X(g); )
-        g = e.input.charCodeAt(++e.position);
-      const I = e.input.slice(C, e.position), a = [];
-      for (I.length < 1 && y(e, "directive name must not be less than one character in length"); g !== 0; ) {
-        for (; W(g); )
-          g = e.input.charCodeAt(++e.position);
-        if (g === 35) {
-          do
-            g = e.input.charCodeAt(++e.position);
-          while (g !== 0 && !H(g));
+  function readDocument(state) {
+    const documentStart = state.position;
+    let hasDirectives = false;
+    let ch;
+    state.version = null;
+    state.checkLineBreaks = state.legacy;
+    state.tagMap = /* @__PURE__ */ Object.create(null);
+    state.anchorMap = /* @__PURE__ */ Object.create(null);
+    while ((ch = state.input.charCodeAt(state.position)) !== 0) {
+      skipSeparationSpace(state, true, -1);
+      ch = state.input.charCodeAt(state.position);
+      if (state.lineIndent > 0 || ch !== 37) {
+        break;
+      }
+      hasDirectives = true;
+      ch = state.input.charCodeAt(++state.position);
+      let _position = state.position;
+      while (ch !== 0 && !isWsOrEol(ch)) {
+        ch = state.input.charCodeAt(++state.position);
+      }
+      const directiveName = state.input.slice(_position, state.position);
+      const directiveArgs = [];
+      if (directiveName.length < 1) {
+        throwError(state, "directive name must not be less than one character in length");
+      }
+      while (ch !== 0) {
+        while (isWhiteSpace(ch)) {
+          ch = state.input.charCodeAt(++state.position);
+        }
+        if (ch === 35) {
+          do {
+            ch = state.input.charCodeAt(++state.position);
+          } while (ch !== 0 && !isEol(ch));
           break;
         }
-        if (H(g)) break;
-        for (C = e.position; g !== 0 && !X(g); )
-          g = e.input.charCodeAt(++e.position);
-        a.push(e.input.slice(C, e.position));
+        if (isEol(ch)) break;
+        _position = state.position;
+        while (ch !== 0 && !isWsOrEol(ch)) {
+          ch = state.input.charCodeAt(++state.position);
+        }
+        directiveArgs.push(state.input.slice(_position, state.position));
       }
-      g !== 0 && Le(e), t.call(ve, I) ? ve[I](e, I, a) : ue(e, 'unknown document directive "' + I + '"');
+      if (ch !== 0) readLineBreak(state);
+      if (_hasOwnProperty.call(directiveHandlers, directiveName)) {
+        directiveHandlers[directiveName](state, directiveName, directiveArgs);
+      } else {
+        throwWarning(state, 'unknown document directive "' + directiveName + '"');
+      }
     }
-    if (V(e, !0, -1), e.lineIndent === 0 && e.input.charCodeAt(e.position) === 45 && e.input.charCodeAt(e.position + 1) === 45 && e.input.charCodeAt(e.position + 2) === 45 ? (e.position += 3, V(e, !0, -1)) : f && y(e, "directives end mark is expected"), te(e, e.lineIndent - 1, N, !1, !0), V(e, !0, -1), e.checkLineBreaks && k.test(e.input.slice(s, e.position)) && ue(e, "non-ASCII line breaks are interpreted as content"), e.documents.push(e.result), e.position === e.lineStart && Ie(e)) {
-      e.input.charCodeAt(e.position) === 46 && (e.position += 3, V(e, !0, -1));
+    skipSeparationSpace(state, true, -1);
+    if (state.lineIndent === 0 && state.input.charCodeAt(state.position) === 45 && state.input.charCodeAt(state.position + 1) === 45 && state.input.charCodeAt(state.position + 2) === 45) {
+      state.position += 3;
+      skipSeparationSpace(state, true, -1);
+    } else if (hasDirectives) {
+      throwError(state, "directives end mark is expected");
+    }
+    composeNode(state, state.lineIndent - 1, CONTEXT_BLOCK_OUT, false, true);
+    skipSeparationSpace(state, true, -1);
+    if (state.checkLineBreaks && PATTERN_NON_ASCII_LINE_BREAKS.test(state.input.slice(documentStart, state.position))) {
+      throwWarning(state, "non-ASCII line breaks are interpreted as content");
+    }
+    state.documents.push(state.result);
+    if (state.position === state.lineStart && testDocumentSeparator(state)) {
+      if (state.input.charCodeAt(state.position) === 46) {
+        state.position += 3;
+        skipSeparationSpace(state, true, -1);
+      }
       return;
     }
-    e.position < e.length - 1 && y(e, "end of the stream or a document separator is expected");
-  }
-  function Ve(e, s) {
-    e = String(e), s = s || {}, e.length !== 0 && (e.charCodeAt(e.length - 1) !== 10 && e.charCodeAt(e.length - 1) !== 13 && (e += `
-`), e.charCodeAt(0) === 65279 && (e = e.slice(1)));
-    const f = new O(e, s), g = e.indexOf("\0");
-    for (g !== -1 && (f.position = g, y(f, "null byte is not allowed in input")), f.input += "\0"; f.input.charCodeAt(f.position) === 32; )
-      f.lineIndent += 1, f.position += 1;
-    for (; f.position < f.length - 1; )
-      Ye(f);
-    return f.documents;
-  }
-  function We(e, s, f) {
-    s !== null && typeof s == "object" && typeof f > "u" && (f = s, s = null);
-    const g = Ve(e, f);
-    if (typeof s != "function")
-      return g;
-    for (let C = 0, I = g.length; C < I; C += 1)
-      s(g[C]);
-  }
-  function Je(e, s) {
-    const f = Ve(e, s);
-    if (f.length !== 0) {
-      if (f.length === 1)
-        return f[0];
-      throw new r("expected a single document in the stream, but found more");
+    if (state.position < state.length - 1) {
+      throwError(state, "end of the stream or a document separator is expected");
     }
   }
-  return Be.loadAll = We, Be.load = Je, Be;
+  function loadDocuments(input, options) {
+    input = String(input);
+    options = options || {};
+    if (input.length !== 0) {
+      if (input.charCodeAt(input.length - 1) !== 10 && input.charCodeAt(input.length - 1) !== 13) {
+        input += "\n";
+      }
+      if (input.charCodeAt(0) === 65279) {
+        input = input.slice(1);
+      }
+    }
+    const state = new State(input, options);
+    const nullpos = input.indexOf("\0");
+    if (nullpos !== -1) {
+      state.position = nullpos;
+      throwError(state, "null byte is not allowed in input");
+    }
+    state.input += "\0";
+    while (state.input.charCodeAt(state.position) === 32) {
+      state.lineIndent += 1;
+      state.position += 1;
+    }
+    while (state.position < state.length - 1) {
+      readDocument(state);
+    }
+    return state.documents;
+  }
+  function loadAll2(input, iterator, options) {
+    if (iterator !== null && typeof iterator === "object" && typeof options === "undefined") {
+      options = iterator;
+      iterator = null;
+    }
+    const documents = loadDocuments(input, options);
+    if (typeof iterator !== "function") {
+      return documents;
+    }
+    for (let index = 0, length = documents.length; index < length; index += 1) {
+      iterator(documents[index]);
+    }
+  }
+  function load2(input, options) {
+    const documents = loadDocuments(input, options);
+    if (documents.length === 0) {
+      return void 0;
+    } else if (documents.length === 1) {
+      return documents[0];
+    }
+    throw new YAMLException2("expected a single document in the stream, but found more");
+  }
+  loader.loadAll = loadAll2;
+  loader.load = load2;
+  return loader;
 }
-var Sa = {}, $a;
-function qr() {
-  if ($a) return Sa;
-  $a = 1;
-  const n = ke(), r = _e(), i = Na(), d = Object.prototype.toString, t = Object.prototype.hasOwnProperty, u = 65279, p = 9, m = 10, N = 13, o = 32, c = 33, D = 34, A = 35, k = 37, j = 38, _ = 39, q = 42, G = 44, H = 45, W = 58, X = 61, $ = 62, pe = 63, le = 64, oe = 91, ee = 93, ge = 96, M = 123, E = 124, w = 125, O = {};
-  O[0] = "\\0", O[7] = "\\a", O[8] = "\\b", O[9] = "\\t", O[10] = "\\n", O[11] = "\\v", O[12] = "\\f", O[13] = "\\r", O[27] = "\\e", O[34] = '\\"', O[92] = "\\\\", O[133] = "\\N", O[160] = "\\_", O[8232] = "\\L", O[8233] = "\\P";
-  const Z = [
+var dumper = {};
+var hasRequiredDumper;
+function requireDumper() {
+  if (hasRequiredDumper) return dumper;
+  hasRequiredDumper = 1;
+  const common2 = requireCommon();
+  const YAMLException2 = requireException();
+  const DEFAULT_SCHEMA2 = require_default();
+  const _toString = Object.prototype.toString;
+  const _hasOwnProperty = Object.prototype.hasOwnProperty;
+  const CHAR_BOM = 65279;
+  const CHAR_TAB = 9;
+  const CHAR_LINE_FEED = 10;
+  const CHAR_CARRIAGE_RETURN = 13;
+  const CHAR_SPACE = 32;
+  const CHAR_EXCLAMATION = 33;
+  const CHAR_DOUBLE_QUOTE = 34;
+  const CHAR_SHARP = 35;
+  const CHAR_PERCENT = 37;
+  const CHAR_AMPERSAND = 38;
+  const CHAR_SINGLE_QUOTE = 39;
+  const CHAR_ASTERISK = 42;
+  const CHAR_COMMA = 44;
+  const CHAR_MINUS = 45;
+  const CHAR_COLON = 58;
+  const CHAR_EQUALS = 61;
+  const CHAR_GREATER_THAN = 62;
+  const CHAR_QUESTION = 63;
+  const CHAR_COMMERCIAL_AT = 64;
+  const CHAR_LEFT_SQUARE_BRACKET = 91;
+  const CHAR_RIGHT_SQUARE_BRACKET = 93;
+  const CHAR_GRAVE_ACCENT = 96;
+  const CHAR_LEFT_CURLY_BRACKET = 123;
+  const CHAR_VERTICAL_LINE = 124;
+  const CHAR_RIGHT_CURLY_BRACKET = 125;
+  const ESCAPE_SEQUENCES = {};
+  ESCAPE_SEQUENCES[0] = "\\0";
+  ESCAPE_SEQUENCES[7] = "\\a";
+  ESCAPE_SEQUENCES[8] = "\\b";
+  ESCAPE_SEQUENCES[9] = "\\t";
+  ESCAPE_SEQUENCES[10] = "\\n";
+  ESCAPE_SEQUENCES[11] = "\\v";
+  ESCAPE_SEQUENCES[12] = "\\f";
+  ESCAPE_SEQUENCES[13] = "\\r";
+  ESCAPE_SEQUENCES[27] = "\\e";
+  ESCAPE_SEQUENCES[34] = '\\"';
+  ESCAPE_SEQUENCES[92] = "\\\\";
+  ESCAPE_SEQUENCES[133] = "\\N";
+  ESCAPE_SEQUENCES[160] = "\\_";
+  ESCAPE_SEQUENCES[8232] = "\\L";
+  ESCAPE_SEQUENCES[8233] = "\\P";
+  const DEPRECATED_BOOLEANS_SYNTAX = [
     "y",
     "Y",
     "yes",
@@ -1624,401 +2798,678 @@ function qr() {
     "off",
     "Off",
     "OFF"
-  ], y = /^[-+]?[0-9_]+(?::[0-9_]+)+(?:\.[0-9_]*)?$/;
-  function ue(a, l) {
-    if (l === null) return {};
-    const v = {}, h = Object.keys(l);
-    for (let T = 0, L = h.length; T < L; T += 1) {
-      let S = h[T], R = String(l[S]);
-      S.slice(0, 2) === "!!" && (S = "tag:yaml.org,2002:" + S.slice(2));
-      const b = a.compiledTypeMap.fallback[S];
-      b && t.call(b.styleAliases, R) && (R = b.styleAliases[R]), v[S] = R;
+  ];
+  const DEPRECATED_BASE60_SYNTAX = /^[-+]?[0-9_]+(?::[0-9_]+)+(?:\.[0-9_]*)?$/;
+  function compileStyleMap(schema2, map2) {
+    if (map2 === null) return {};
+    const result = {};
+    const keys = Object.keys(map2);
+    for (let index = 0, length = keys.length; index < length; index += 1) {
+      let tag = keys[index];
+      let style = String(map2[tag]);
+      if (tag.slice(0, 2) === "!!") {
+        tag = "tag:yaml.org,2002:" + tag.slice(2);
+      }
+      const type2 = schema2.compiledTypeMap["fallback"][tag];
+      if (type2 && _hasOwnProperty.call(type2.styleAliases, style)) {
+        style = type2.styleAliases[style];
+      }
+      result[tag] = style;
     }
-    return v;
+    return result;
   }
-  function Q(a) {
-    let l, v;
-    const h = a.toString(16).toUpperCase();
-    if (a <= 255)
-      l = "x", v = 2;
-    else if (a <= 65535)
-      l = "u", v = 4;
-    else if (a <= 4294967295)
-      l = "U", v = 8;
-    else
-      throw new r("code point within a string may not be greater than 0xFFFFFFFF");
-    return "\\" + l + n.repeat("0", v - h.length) + h;
-  }
-  const de = 1, ae = 2;
-  function Se(a) {
-    this.schema = a.schema || i, this.indent = Math.max(1, a.indent || 2), this.noArrayIndent = a.noArrayIndent || !1, this.skipInvalid = a.skipInvalid || !1, this.flowLevel = n.isNothing(a.flowLevel) ? -1 : a.flowLevel, this.styleMap = ue(this.schema, a.styles || null), this.sortKeys = a.sortKeys || !1, this.lineWidth = a.lineWidth || 80, this.noRefs = a.noRefs || !1, this.noCompatMode = a.noCompatMode || !1, this.condenseFlow = a.condenseFlow || !1, this.quotingType = a.quotingType === '"' ? ae : de, this.forceQuotes = a.forceQuotes || !1, this.replacer = typeof a.replacer == "function" ? a.replacer : null, this.implicitTypes = this.schema.compiledImplicit, this.explicitTypes = this.schema.compiledExplicit, this.tag = null, this.result = "", this.duplicates = [], this.usedDuplicates = null;
-  }
-  function ce(a, l) {
-    const v = n.repeat(" ", l);
-    let h = 0, T = "";
-    const L = a.length;
-    for (; h < L; ) {
-      let S;
-      const R = a.indexOf(`
-`, h);
-      R === -1 ? (S = a.slice(h), h = L) : (S = a.slice(h, R + 1), h = R + 1), S.length && S !== `
-` && (T += v), T += S;
+  function encodeHex(character) {
+    let handle;
+    let length;
+    const string = character.toString(16).toUpperCase();
+    if (character <= 255) {
+      handle = "x";
+      length = 2;
+    } else if (character <= 65535) {
+      handle = "u";
+      length = 4;
+    } else if (character <= 4294967295) {
+      handle = "U";
+      length = 8;
+    } else {
+      throw new YAMLException2("code point within a string may not be greater than 0xFFFFFFFF");
     }
-    return T;
+    return "\\" + handle + common2.repeat("0", length - string.length) + string;
   }
-  function Ce(a, l) {
-    return `
-` + n.repeat(" ", a.indent * l);
+  const QUOTING_TYPE_SINGLE = 1;
+  const QUOTING_TYPE_DOUBLE = 2;
+  function State(options) {
+    this.schema = options["schema"] || DEFAULT_SCHEMA2;
+    this.indent = Math.max(1, options["indent"] || 2);
+    this.noArrayIndent = options["noArrayIndent"] || false;
+    this.skipInvalid = options["skipInvalid"] || false;
+    this.flowLevel = common2.isNothing(options["flowLevel"]) ? -1 : options["flowLevel"];
+    this.styleMap = compileStyleMap(this.schema, options["styles"] || null);
+    this.sortKeys = options["sortKeys"] || false;
+    this.lineWidth = options["lineWidth"] || 80;
+    this.noRefs = options["noRefs"] || false;
+    this.noCompatMode = options["noCompatMode"] || false;
+    this.condenseFlow = options["condenseFlow"] || false;
+    this.quotingType = options["quotingType"] === '"' ? QUOTING_TYPE_DOUBLE : QUOTING_TYPE_SINGLE;
+    this.forceQuotes = options["forceQuotes"] || false;
+    this.replacer = typeof options["replacer"] === "function" ? options["replacer"] : null;
+    this.implicitTypes = this.schema.compiledImplicit;
+    this.explicitTypes = this.schema.compiledExplicit;
+    this.tag = null;
+    this.result = "";
+    this.duplicates = [];
+    this.usedDuplicates = null;
   }
-  function ve(a, l) {
-    for (let v = 0, h = a.implicitTypes.length; v < h; v += 1)
-      if (a.implicitTypes[v].resolve(l))
-        return !0;
-    return !1;
+  function indentString(string, spaces) {
+    const ind = common2.repeat(" ", spaces);
+    let position = 0;
+    let result = "";
+    const length = string.length;
+    while (position < length) {
+      let line;
+      const next = string.indexOf("\n", position);
+      if (next === -1) {
+        line = string.slice(position);
+        position = length;
+      } else {
+        line = string.slice(position, next + 1);
+        position = next + 1;
+      }
+      if (line.length && line !== "\n") result += ind;
+      result += line;
+    }
+    return result;
   }
-  function z(a) {
-    return a === o || a === p;
+  function generateNextLine(state, level) {
+    return "\n" + common2.repeat(" ", state.indent * level);
   }
-  function me(a) {
-    return a >= 32 && a <= 126 || a >= 161 && a <= 55295 && a !== 8232 && a !== 8233 || a >= 57344 && a <= 65533 && a !== u || a >= 65536 && a <= 1114111;
+  function testImplicitResolving(state, str2) {
+    for (let index = 0, length = state.implicitTypes.length; index < length; index += 1) {
+      const type2 = state.implicitTypes[index];
+      if (type2.resolve(str2)) {
+        return true;
+      }
+    }
+    return false;
   }
-  function re(a) {
-    return me(a) && a !== u && // - b-char
-    a !== N && a !== m;
+  function isWhitespace(c) {
+    return c === CHAR_SPACE || c === CHAR_TAB;
   }
-  function Le(a, l, v) {
-    const h = re(a), T = h && !z(a);
+  function isPrintable(c) {
+    return c >= 32 && c <= 126 || c >= 161 && c <= 55295 && c !== 8232 && c !== 8233 || c >= 57344 && c <= 65533 && c !== CHAR_BOM || c >= 65536 && c <= 1114111;
+  }
+  function isNsCharOrWhitespace(c) {
+    return isPrintable(c) && c !== CHAR_BOM && // - b-char
+    c !== CHAR_CARRIAGE_RETURN && c !== CHAR_LINE_FEED;
+  }
+  function isPlainSafe(c, prev, inblock) {
+    const cIsNsCharOrWhitespace = isNsCharOrWhitespace(c);
+    const cIsNsChar = cIsNsCharOrWhitespace && !isWhitespace(c);
     return (
       // ns-plain-safe
-      (v ? h : h && // - c-flow-indicator
-      a !== G && a !== oe && a !== ee && a !== M && a !== w) && // ns-plain-char
-      a !== A && // false on '#'
-      !(l === W && !T) || // false on ': '
-      re(l) && !z(l) && a === A || // change to true on '[^ ]#'
-      l === W && T
+      (inblock ? cIsNsCharOrWhitespace : cIsNsCharOrWhitespace && // - c-flow-indicator
+      c !== CHAR_COMMA && c !== CHAR_LEFT_SQUARE_BRACKET && c !== CHAR_RIGHT_SQUARE_BRACKET && c !== CHAR_LEFT_CURLY_BRACKET && c !== CHAR_RIGHT_CURLY_BRACKET) && // ns-plain-char
+      c !== CHAR_SHARP && // false on '#'
+      !(prev === CHAR_COLON && !cIsNsChar) || // false on ': '
+      isNsCharOrWhitespace(prev) && !isWhitespace(prev) && c === CHAR_SHARP || // change to true on '[^ ]#'
+      prev === CHAR_COLON && cIsNsChar
     );
   }
-  function V(a) {
-    return me(a) && a !== u && !z(a) && // - s-white
+  function isPlainSafeFirst(c) {
+    return isPrintable(c) && c !== CHAR_BOM && !isWhitespace(c) && // - s-white
     // - (c-indicator ::=
     // “-” | “?” | “:” | “,” | “[” | “]” | “{” | “}”
-    a !== H && a !== pe && a !== W && a !== G && a !== oe && a !== ee && a !== M && a !== w && // | “#” | “&” | “*” | “!” | “|” | “=” | “>” | “'” | “"”
-    a !== A && a !== j && a !== q && a !== c && a !== E && a !== X && a !== $ && a !== _ && a !== D && // | “%” | “@” | “`”)
-    a !== k && a !== le && a !== ge;
+    c !== CHAR_MINUS && c !== CHAR_QUESTION && c !== CHAR_COLON && c !== CHAR_COMMA && c !== CHAR_LEFT_SQUARE_BRACKET && c !== CHAR_RIGHT_SQUARE_BRACKET && c !== CHAR_LEFT_CURLY_BRACKET && c !== CHAR_RIGHT_CURLY_BRACKET && // | “#” | “&” | “*” | “!” | “|” | “=” | “>” | “'” | “"”
+    c !== CHAR_SHARP && c !== CHAR_AMPERSAND && c !== CHAR_ASTERISK && c !== CHAR_EXCLAMATION && c !== CHAR_VERTICAL_LINE && c !== CHAR_EQUALS && c !== CHAR_GREATER_THAN && c !== CHAR_SINGLE_QUOTE && c !== CHAR_DOUBLE_QUOTE && // | “%” | “@” | “`”)
+    c !== CHAR_PERCENT && c !== CHAR_COMMERCIAL_AT && c !== CHAR_GRAVE_ACCENT;
   }
-  function Ie(a) {
-    return !z(a) && a !== W;
+  function isPlainSafeLast(c) {
+    return !isWhitespace(c) && c !== CHAR_COLON;
   }
-  function ie(a, l) {
-    const v = a.charCodeAt(l);
-    let h;
-    return v >= 55296 && v <= 56319 && l + 1 < a.length && (h = a.charCodeAt(l + 1), h >= 56320 && h <= 57343) ? (v - 55296) * 1024 + h - 56320 + 65536 : v;
-  }
-  function Me(a) {
-    return /^\n* /.test(a);
-  }
-  const we = 1, ye = 2, Fe = 3, Oe = 4, ne = 5;
-  function Ee(a, l, v, h, T, L, S, R) {
-    let b, P = 0, x = null, F = !1, U = !1;
-    const ya = h !== -1;
-    let be = -1, Re = V(ie(a, 0)) && Ie(ie(a, a.length - 1));
-    if (l || S)
-      for (b = 0; b < a.length; P >= 65536 ? b += 2 : b++) {
-        if (P = ie(a, b), !me(P))
-          return ne;
-        Re = Re && Le(P, x, R), x = P;
+  function codePointAt(string, pos) {
+    const first = string.charCodeAt(pos);
+    let second;
+    if (first >= 55296 && first <= 56319 && pos + 1 < string.length) {
+      second = string.charCodeAt(pos + 1);
+      if (second >= 56320 && second <= 57343) {
+        return (first - 55296) * 1024 + second - 56320 + 65536;
       }
-    else {
-      for (b = 0; b < a.length; P >= 65536 ? b += 2 : b++) {
-        if (P = ie(a, b), P === m)
-          F = !0, ya && (U = U || // Foldable line = too long, and not more-indented.
-          b - be - 1 > h && a[be + 1] !== " ", be = b);
-        else if (!me(P))
-          return ne;
-        Re = Re && Le(P, x, R), x = P;
-      }
-      U = U || ya && b - be - 1 > h && a[be + 1] !== " ";
     }
-    return !F && !U ? Re && !S && !T(a) ? we : L === ae ? ne : ye : v > 9 && Me(a) ? ne : S ? L === ae ? ne : ye : U ? Oe : Fe;
+    return first;
   }
-  function Ge(a, l, v, h, T) {
-    a.dump = (function() {
-      if (l.length === 0)
-        return a.quotingType === ae ? '""' : "''";
-      if (!a.noCompatMode && (Z.indexOf(l) !== -1 || y.test(l)))
-        return a.quotingType === ae ? '"' + l + '"' : "'" + l + "'";
-      const L = a.indent * Math.max(1, v), S = a.lineWidth === -1 ? -1 : Math.max(Math.min(a.lineWidth, 40), a.lineWidth - L), R = h || // No block styles in flow mode.
-      a.flowLevel > -1 && v >= a.flowLevel;
-      function b(P) {
-        return ve(a, P);
+  function needIndentIndicator(string) {
+    const leadingSpaceRe = /^\n* /;
+    return leadingSpaceRe.test(string);
+  }
+  const STYLE_PLAIN = 1;
+  const STYLE_SINGLE = 2;
+  const STYLE_LITERAL = 3;
+  const STYLE_FOLDED = 4;
+  const STYLE_DOUBLE = 5;
+  function chooseScalarStyle(string, singleLineOnly, indentPerLevel, lineWidth, testAmbiguousType, quotingType, forceQuotes, inblock) {
+    let i;
+    let char = 0;
+    let prevChar = null;
+    let hasLineBreak = false;
+    let hasFoldableLine = false;
+    const shouldTrackWidth = lineWidth !== -1;
+    let previousLineBreak = -1;
+    let plain = isPlainSafeFirst(codePointAt(string, 0)) && isPlainSafeLast(codePointAt(string, string.length - 1));
+    if (singleLineOnly || forceQuotes) {
+      for (i = 0; i < string.length; char >= 65536 ? i += 2 : i++) {
+        char = codePointAt(string, i);
+        if (!isPrintable(char)) {
+          return STYLE_DOUBLE;
+        }
+        plain = plain && isPlainSafe(char, prevChar, inblock);
+        prevChar = char;
       }
-      switch (Ee(
-        l,
-        R,
-        a.indent,
-        S,
-        b,
-        a.quotingType,
-        a.forceQuotes && !h,
-        T
+    } else {
+      for (i = 0; i < string.length; char >= 65536 ? i += 2 : i++) {
+        char = codePointAt(string, i);
+        if (char === CHAR_LINE_FEED) {
+          hasLineBreak = true;
+          if (shouldTrackWidth) {
+            hasFoldableLine = hasFoldableLine || // Foldable line = too long, and not more-indented.
+            i - previousLineBreak - 1 > lineWidth && string[previousLineBreak + 1] !== " ";
+            previousLineBreak = i;
+          }
+        } else if (!isPrintable(char)) {
+          return STYLE_DOUBLE;
+        }
+        plain = plain && isPlainSafe(char, prevChar, inblock);
+        prevChar = char;
+      }
+      hasFoldableLine = hasFoldableLine || shouldTrackWidth && (i - previousLineBreak - 1 > lineWidth && string[previousLineBreak + 1] !== " ");
+    }
+    if (!hasLineBreak && !hasFoldableLine) {
+      if (plain && !forceQuotes && !testAmbiguousType(string)) {
+        return STYLE_PLAIN;
+      }
+      return quotingType === QUOTING_TYPE_DOUBLE ? STYLE_DOUBLE : STYLE_SINGLE;
+    }
+    if (indentPerLevel > 9 && needIndentIndicator(string)) {
+      return STYLE_DOUBLE;
+    }
+    if (!forceQuotes) {
+      return hasFoldableLine ? STYLE_FOLDED : STYLE_LITERAL;
+    }
+    return quotingType === QUOTING_TYPE_DOUBLE ? STYLE_DOUBLE : STYLE_SINGLE;
+  }
+  function writeScalar(state, string, level, iskey, inblock) {
+    state.dump = (function() {
+      if (string.length === 0) {
+        return state.quotingType === QUOTING_TYPE_DOUBLE ? '""' : "''";
+      }
+      if (!state.noCompatMode) {
+        if (DEPRECATED_BOOLEANS_SYNTAX.indexOf(string) !== -1 || DEPRECATED_BASE60_SYNTAX.test(string)) {
+          return state.quotingType === QUOTING_TYPE_DOUBLE ? '"' + string + '"' : "'" + string + "'";
+        }
+      }
+      const indent = state.indent * Math.max(1, level);
+      const lineWidth = state.lineWidth === -1 ? -1 : Math.max(Math.min(state.lineWidth, 40), state.lineWidth - indent);
+      const singleLineOnly = iskey || // No block styles in flow mode.
+      state.flowLevel > -1 && level >= state.flowLevel;
+      function testAmbiguity(string2) {
+        return testImplicitResolving(state, string2);
+      }
+      switch (chooseScalarStyle(
+        string,
+        singleLineOnly,
+        state.indent,
+        lineWidth,
+        testAmbiguity,
+        state.quotingType,
+        state.forceQuotes && !iskey,
+        inblock
       )) {
-        case we:
-          return l;
-        case ye:
-          return "'" + l.replace(/'/g, "''") + "'";
-        case Fe:
-          return "|" + Ue(l, a.indent) + He(ce(l, L));
-        case Oe:
-          return ">" + Ue(l, a.indent) + He(ce(ze(l, S), L));
-        case ne:
-          return '"' + Ye(l) + '"';
+        case STYLE_PLAIN:
+          return string;
+        case STYLE_SINGLE:
+          return "'" + string.replace(/'/g, "''") + "'";
+        case STYLE_LITERAL:
+          return "|" + blockHeader(string, state.indent) + dropEndingNewline(indentString(string, indent));
+        case STYLE_FOLDED:
+          return ">" + blockHeader(string, state.indent) + dropEndingNewline(indentString(foldString(string, lineWidth), indent));
+        case STYLE_DOUBLE:
+          return '"' + escapeString(string) + '"';
         default:
-          throw new r("impossible error: invalid scalar style");
+          throw new YAMLException2("impossible error: invalid scalar style");
       }
     })();
   }
-  function Ue(a, l) {
-    const v = Me(a) ? String(l) : "", h = a[a.length - 1] === `
-`, L = h && (a[a.length - 2] === `
-` || a === `
-`) ? "+" : h ? "" : "-";
-    return v + L + `
-`;
+  function blockHeader(string, indentPerLevel) {
+    const indentIndicator = needIndentIndicator(string) ? String(indentPerLevel) : "";
+    const clip = string[string.length - 1] === "\n";
+    const keep = clip && (string[string.length - 2] === "\n" || string === "\n");
+    const chomp = keep ? "+" : clip ? "" : "-";
+    return indentIndicator + chomp + "\n";
   }
-  function He(a) {
-    return a[a.length - 1] === `
-` ? a.slice(0, -1) : a;
+  function dropEndingNewline(string) {
+    return string[string.length - 1] === "\n" ? string.slice(0, -1) : string;
   }
-  function ze(a, l) {
-    const v = /(\n+)([^\n]*)/g;
-    let h = (function() {
-      let R = a.indexOf(`
-`);
-      return R = R !== -1 ? R : a.length, v.lastIndex = R, te(a.slice(0, R), l);
-    })(), T = a[0] === `
-` || a[0] === " ", L, S;
-    for (; S = v.exec(a); ) {
-      const R = S[1], b = S[2];
-      L = b[0] === " ", h += R + (!T && !L && b !== "" ? `
-` : "") + te(b, l), T = L;
+  function foldString(string, width) {
+    const lineRe = /(\n+)([^\n]*)/g;
+    let result = (function() {
+      let nextLF = string.indexOf("\n");
+      nextLF = nextLF !== -1 ? nextLF : string.length;
+      lineRe.lastIndex = nextLF;
+      return foldLine(string.slice(0, nextLF), width);
+    })();
+    let prevMoreIndented = string[0] === "\n" || string[0] === " ";
+    let moreIndented;
+    let match;
+    while (match = lineRe.exec(string)) {
+      const prefix = match[1];
+      const line = match[2];
+      moreIndented = line[0] === " ";
+      result += prefix + (!prevMoreIndented && !moreIndented && line !== "" ? "\n" : "") + foldLine(line, width);
+      prevMoreIndented = moreIndented;
     }
-    return h;
+    return result;
   }
-  function te(a, l) {
-    if (a === "" || a[0] === " ") return a;
-    const v = / [^ ]/g;
-    let h, T = 0, L, S = 0, R = 0, b = "";
-    for (; h = v.exec(a); )
-      R = h.index, R - T > l && (L = S > T ? S : R, b += `
-` + a.slice(T, L), T = L + 1), S = R;
-    return b += `
-`, a.length - T > l && S > T ? b += a.slice(T, S) + `
-` + a.slice(S + 1) : b += a.slice(T), b.slice(1);
-  }
-  function Ye(a) {
-    let l = "", v = 0;
-    for (let h = 0; h < a.length; v >= 65536 ? h += 2 : h++) {
-      v = ie(a, h);
-      const T = O[v];
-      !T && me(v) ? (l += a[h], v >= 65536 && (l += a[h + 1])) : l += T || Q(v);
+  function foldLine(line, width) {
+    if (line === "" || line[0] === " ") return line;
+    const breakRe = / [^ ]/g;
+    let match;
+    let start = 0;
+    let end;
+    let curr = 0;
+    let next = 0;
+    let result = "";
+    while (match = breakRe.exec(line)) {
+      next = match.index;
+      if (next - start > width) {
+        end = curr > start ? curr : next;
+        result += "\n" + line.slice(start, end);
+        start = end + 1;
+      }
+      curr = next;
     }
-    return l;
-  }
-  function Ve(a, l, v) {
-    let h = "";
-    const T = a.tag;
-    for (let L = 0, S = v.length; L < S; L += 1) {
-      let R = v[L];
-      a.replacer && (R = a.replacer.call(v, String(L), R)), (f(a, l, R, !1, !1) || typeof R > "u" && f(a, l, null, !1, !1)) && (h !== "" && (h += "," + (a.condenseFlow ? "" : " ")), h += a.dump);
+    result += "\n";
+    if (line.length - start > width && curr > start) {
+      result += line.slice(start, curr) + "\n" + line.slice(curr + 1);
+    } else {
+      result += line.slice(start);
     }
-    a.tag = T, a.dump = "[" + h + "]";
+    return result.slice(1);
   }
-  function We(a, l, v, h) {
-    let T = "";
-    const L = a.tag;
-    for (let S = 0, R = v.length; S < R; S += 1) {
-      let b = v[S];
-      a.replacer && (b = a.replacer.call(v, String(S), b)), (f(a, l + 1, b, !0, !0, !1, !0) || typeof b > "u" && f(a, l + 1, null, !0, !0, !1, !0)) && ((!h || T !== "") && (T += Ce(a, l)), a.dump && m === a.dump.charCodeAt(0) ? T += "-" : T += "- ", T += a.dump);
+  function escapeString(string) {
+    let result = "";
+    let char = 0;
+    for (let i = 0; i < string.length; char >= 65536 ? i += 2 : i++) {
+      char = codePointAt(string, i);
+      const escapeSeq = ESCAPE_SEQUENCES[char];
+      if (!escapeSeq && isPrintable(char)) {
+        result += string[i];
+        if (char >= 65536) result += string[i + 1];
+      } else {
+        result += escapeSeq || encodeHex(char);
+      }
     }
-    a.tag = L, a.dump = T || "[]";
+    return result;
   }
-  function Je(a, l, v) {
-    let h = "";
-    const T = a.tag, L = Object.keys(v);
-    for (let S = 0, R = L.length; S < R; S += 1) {
-      let b = "";
-      h !== "" && (b += ", "), a.condenseFlow && (b += '"');
-      const P = L[S];
-      let x = v[P];
-      a.replacer && (x = a.replacer.call(v, P, x)), f(a, l, P, !1, !1) && (a.dump.length > 1024 && (b += "? "), b += a.dump + (a.condenseFlow ? '"' : "") + ":" + (a.condenseFlow ? "" : " "), f(a, l, x, !1, !1) && (b += a.dump, h += b));
+  function writeFlowSequence(state, level, object) {
+    let _result = "";
+    const _tag = state.tag;
+    for (let index = 0, length = object.length; index < length; index += 1) {
+      let value = object[index];
+      if (state.replacer) {
+        value = state.replacer.call(object, String(index), value);
+      }
+      if (writeNode(state, level, value, false, false) || typeof value === "undefined" && writeNode(state, level, null, false, false)) {
+        if (_result !== "") _result += "," + (!state.condenseFlow ? " " : "");
+        _result += state.dump;
+      }
     }
-    a.tag = T, a.dump = "{" + h + "}";
+    state.tag = _tag;
+    state.dump = "[" + _result + "]";
   }
-  function e(a, l, v, h) {
-    let T = "";
-    const L = a.tag, S = Object.keys(v);
-    if (a.sortKeys === !0)
-      S.sort();
-    else if (typeof a.sortKeys == "function")
-      S.sort(a.sortKeys);
-    else if (a.sortKeys)
-      throw new r("sortKeys must be a boolean or a function");
-    for (let R = 0, b = S.length; R < b; R += 1) {
-      let P = "";
-      (!h || T !== "") && (P += Ce(a, l));
-      const x = S[R];
-      let F = v[x];
-      if (a.replacer && (F = a.replacer.call(v, x, F)), !f(a, l + 1, x, !0, !0, !0))
-        continue;
-      const U = a.tag !== null && a.tag !== "?" || a.dump && a.dump.length > 1024;
-      U && (a.dump && m === a.dump.charCodeAt(0) ? P += "?" : P += "? "), P += a.dump, U && (P += Ce(a, l)), f(a, l + 1, F, !0, U) && (a.dump && m === a.dump.charCodeAt(0) ? P += ":" : P += ": ", P += a.dump, T += P);
-    }
-    a.tag = L, a.dump = T || "{}";
-  }
-  function s(a, l, v) {
-    const h = v ? a.explicitTypes : a.implicitTypes;
-    for (let T = 0, L = h.length; T < L; T += 1) {
-      const S = h[T];
-      if ((S.instanceOf || S.predicate) && (!S.instanceOf || typeof l == "object" && l instanceof S.instanceOf) && (!S.predicate || S.predicate(l))) {
-        if (v ? S.multi && S.representName ? a.tag = S.representName(l) : a.tag = S.tag : a.tag = "?", S.represent) {
-          const R = a.styleMap[S.tag] || S.defaultStyle;
-          let b;
-          if (d.call(S.represent) === "[object Function]")
-            b = S.represent(l, R);
-          else if (t.call(S.represent, R))
-            b = S.represent[R](l, R);
-          else
-            throw new r("!<" + S.tag + '> tag resolver accepts not "' + R + '" style');
-          a.dump = b;
+  function writeBlockSequence(state, level, object, compact) {
+    let _result = "";
+    const _tag = state.tag;
+    for (let index = 0, length = object.length; index < length; index += 1) {
+      let value = object[index];
+      if (state.replacer) {
+        value = state.replacer.call(object, String(index), value);
+      }
+      if (writeNode(state, level + 1, value, true, true, false, true) || typeof value === "undefined" && writeNode(state, level + 1, null, true, true, false, true)) {
+        if (!compact || _result !== "") {
+          _result += generateNextLine(state, level);
         }
-        return !0;
+        if (state.dump && CHAR_LINE_FEED === state.dump.charCodeAt(0)) {
+          _result += "-";
+        } else {
+          _result += "- ";
+        }
+        _result += state.dump;
       }
     }
-    return !1;
+    state.tag = _tag;
+    state.dump = _result || "[]";
   }
-  function f(a, l, v, h, T, L, S) {
-    a.tag = null, a.dump = v, s(a, v, !1) || s(a, v, !0);
-    const R = d.call(a.dump), b = h;
-    h && (h = a.flowLevel < 0 || a.flowLevel > l);
-    const P = R === "[object Object]" || R === "[object Array]";
-    let x, F;
-    if (P && (x = a.duplicates.indexOf(v), F = x !== -1), (a.tag !== null && a.tag !== "?" || F || a.indent !== 2 && l > 0) && (T = !1), F && a.usedDuplicates[x])
-      a.dump = "*ref_" + x;
-    else {
-      if (P && F && !a.usedDuplicates[x] && (a.usedDuplicates[x] = !0), R === "[object Object]")
-        h && Object.keys(a.dump).length !== 0 ? (e(a, l, a.dump, T), F && (a.dump = "&ref_" + x + a.dump)) : (Je(a, l, a.dump), F && (a.dump = "&ref_" + x + " " + a.dump));
-      else if (R === "[object Array]")
-        h && a.dump.length !== 0 ? (a.noArrayIndent && !S && l > 0 ? We(a, l - 1, a.dump, T) : We(a, l, a.dump, T), F && (a.dump = "&ref_" + x + a.dump)) : (Ve(a, l, a.dump), F && (a.dump = "&ref_" + x + " " + a.dump));
-      else if (R === "[object String]")
-        a.tag !== "?" && Ge(a, a.dump, l, L, b);
-      else {
-        if (R === "[object Undefined]")
-          return !1;
-        if (a.skipInvalid) return !1;
-        throw new r("unacceptable kind of an object to dump " + R);
+  function writeFlowMapping(state, level, object) {
+    let _result = "";
+    const _tag = state.tag;
+    const objectKeyList = Object.keys(object);
+    for (let index = 0, length = objectKeyList.length; index < length; index += 1) {
+      let pairBuffer = "";
+      if (_result !== "") pairBuffer += ", ";
+      if (state.condenseFlow) pairBuffer += '"';
+      const objectKey = objectKeyList[index];
+      let objectValue = object[objectKey];
+      if (state.replacer) {
+        objectValue = state.replacer.call(object, objectKey, objectValue);
       }
-      if (a.tag !== null && a.tag !== "?") {
-        let U = encodeURI(
-          a.tag[0] === "!" ? a.tag.slice(1) : a.tag
+      if (!writeNode(state, level, objectKey, false, false)) {
+        continue;
+      }
+      if (state.dump.length > 1024) pairBuffer += "? ";
+      pairBuffer += state.dump + (state.condenseFlow ? '"' : "") + ":" + (state.condenseFlow ? "" : " ");
+      if (!writeNode(state, level, objectValue, false, false)) {
+        continue;
+      }
+      pairBuffer += state.dump;
+      _result += pairBuffer;
+    }
+    state.tag = _tag;
+    state.dump = "{" + _result + "}";
+  }
+  function writeBlockMapping(state, level, object, compact) {
+    let _result = "";
+    const _tag = state.tag;
+    const objectKeyList = Object.keys(object);
+    if (state.sortKeys === true) {
+      objectKeyList.sort();
+    } else if (typeof state.sortKeys === "function") {
+      objectKeyList.sort(state.sortKeys);
+    } else if (state.sortKeys) {
+      throw new YAMLException2("sortKeys must be a boolean or a function");
+    }
+    for (let index = 0, length = objectKeyList.length; index < length; index += 1) {
+      let pairBuffer = "";
+      if (!compact || _result !== "") {
+        pairBuffer += generateNextLine(state, level);
+      }
+      const objectKey = objectKeyList[index];
+      let objectValue = object[objectKey];
+      if (state.replacer) {
+        objectValue = state.replacer.call(object, objectKey, objectValue);
+      }
+      if (!writeNode(state, level + 1, objectKey, true, true, true)) {
+        continue;
+      }
+      const explicitPair = state.tag !== null && state.tag !== "?" || state.dump && state.dump.length > 1024;
+      if (explicitPair) {
+        if (state.dump && CHAR_LINE_FEED === state.dump.charCodeAt(0)) {
+          pairBuffer += "?";
+        } else {
+          pairBuffer += "? ";
+        }
+      }
+      pairBuffer += state.dump;
+      if (explicitPair) {
+        pairBuffer += generateNextLine(state, level);
+      }
+      if (!writeNode(state, level + 1, objectValue, true, explicitPair)) {
+        continue;
+      }
+      if (state.dump && CHAR_LINE_FEED === state.dump.charCodeAt(0)) {
+        pairBuffer += ":";
+      } else {
+        pairBuffer += ": ";
+      }
+      pairBuffer += state.dump;
+      _result += pairBuffer;
+    }
+    state.tag = _tag;
+    state.dump = _result || "{}";
+  }
+  function detectType(state, object, explicit) {
+    const typeList = explicit ? state.explicitTypes : state.implicitTypes;
+    for (let index = 0, length = typeList.length; index < length; index += 1) {
+      const type2 = typeList[index];
+      if ((type2.instanceOf || type2.predicate) && (!type2.instanceOf || typeof object === "object" && object instanceof type2.instanceOf) && (!type2.predicate || type2.predicate(object))) {
+        if (explicit) {
+          if (type2.multi && type2.representName) {
+            state.tag = type2.representName(object);
+          } else {
+            state.tag = type2.tag;
+          }
+        } else {
+          state.tag = "?";
+        }
+        if (type2.represent) {
+          const style = state.styleMap[type2.tag] || type2.defaultStyle;
+          let _result;
+          if (_toString.call(type2.represent) === "[object Function]") {
+            _result = type2.represent(object, style);
+          } else if (_hasOwnProperty.call(type2.represent, style)) {
+            _result = type2.represent[style](object, style);
+          } else {
+            throw new YAMLException2("!<" + type2.tag + '> tag resolver accepts not "' + style + '" style');
+          }
+          state.dump = _result;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+  function writeNode(state, level, object, block, compact, iskey, isblockseq) {
+    state.tag = null;
+    state.dump = object;
+    if (!detectType(state, object, false)) {
+      detectType(state, object, true);
+    }
+    const type2 = _toString.call(state.dump);
+    const inblock = block;
+    if (block) {
+      block = state.flowLevel < 0 || state.flowLevel > level;
+    }
+    const objectOrArray = type2 === "[object Object]" || type2 === "[object Array]";
+    let duplicateIndex;
+    let duplicate;
+    if (objectOrArray) {
+      duplicateIndex = state.duplicates.indexOf(object);
+      duplicate = duplicateIndex !== -1;
+    }
+    if (state.tag !== null && state.tag !== "?" || duplicate || state.indent !== 2 && level > 0) {
+      compact = false;
+    }
+    if (duplicate && state.usedDuplicates[duplicateIndex]) {
+      state.dump = "*ref_" + duplicateIndex;
+    } else {
+      if (objectOrArray && duplicate && !state.usedDuplicates[duplicateIndex]) {
+        state.usedDuplicates[duplicateIndex] = true;
+      }
+      if (type2 === "[object Object]") {
+        if (block && Object.keys(state.dump).length !== 0) {
+          writeBlockMapping(state, level, state.dump, compact);
+          if (duplicate) {
+            state.dump = "&ref_" + duplicateIndex + state.dump;
+          }
+        } else {
+          writeFlowMapping(state, level, state.dump);
+          if (duplicate) {
+            state.dump = "&ref_" + duplicateIndex + " " + state.dump;
+          }
+        }
+      } else if (type2 === "[object Array]") {
+        if (block && state.dump.length !== 0) {
+          if (state.noArrayIndent && !isblockseq && level > 0) {
+            writeBlockSequence(state, level - 1, state.dump, compact);
+          } else {
+            writeBlockSequence(state, level, state.dump, compact);
+          }
+          if (duplicate) {
+            state.dump = "&ref_" + duplicateIndex + state.dump;
+          }
+        } else {
+          writeFlowSequence(state, level, state.dump);
+          if (duplicate) {
+            state.dump = "&ref_" + duplicateIndex + " " + state.dump;
+          }
+        }
+      } else if (type2 === "[object String]") {
+        if (state.tag !== "?") {
+          writeScalar(state, state.dump, level, iskey, inblock);
+        }
+      } else if (type2 === "[object Undefined]") {
+        return false;
+      } else {
+        if (state.skipInvalid) return false;
+        throw new YAMLException2("unacceptable kind of an object to dump " + type2);
+      }
+      if (state.tag !== null && state.tag !== "?") {
+        let tagStr = encodeURI(
+          state.tag[0] === "!" ? state.tag.slice(1) : state.tag
         ).replace(/!/g, "%21");
-        a.tag[0] === "!" ? U = "!" + U : U.slice(0, 18) === "tag:yaml.org,2002:" ? U = "!!" + U.slice(18) : U = "!<" + U + ">", a.dump = U + " " + a.dump;
+        if (state.tag[0] === "!") {
+          tagStr = "!" + tagStr;
+        } else if (tagStr.slice(0, 18) === "tag:yaml.org,2002:") {
+          tagStr = "!!" + tagStr.slice(18);
+        } else {
+          tagStr = "!<" + tagStr + ">";
+        }
+        state.dump = tagStr + " " + state.dump;
       }
     }
-    return !0;
+    return true;
   }
-  function g(a, l) {
-    const v = [], h = [];
-    C(a, v, h);
-    const T = h.length;
-    for (let L = 0; L < T; L += 1)
-      l.duplicates.push(v[h[L]]);
-    l.usedDuplicates = new Array(T);
+  function getDuplicateReferences(object, state) {
+    const objects = [];
+    const duplicatesIndexes = [];
+    inspectNode(object, objects, duplicatesIndexes);
+    const length = duplicatesIndexes.length;
+    for (let index = 0; index < length; index += 1) {
+      state.duplicates.push(objects[duplicatesIndexes[index]]);
+    }
+    state.usedDuplicates = new Array(length);
   }
-  function C(a, l, v) {
-    if (a !== null && typeof a == "object") {
-      const h = l.indexOf(a);
-      if (h !== -1)
-        v.indexOf(h) === -1 && v.push(h);
-      else if (l.push(a), Array.isArray(a))
-        for (let T = 0, L = a.length; T < L; T += 1)
-          C(a[T], l, v);
-      else {
-        const T = Object.keys(a);
-        for (let L = 0, S = T.length; L < S; L += 1)
-          C(a[T[L]], l, v);
+  function inspectNode(object, objects, duplicatesIndexes) {
+    if (object !== null && typeof object === "object") {
+      const index = objects.indexOf(object);
+      if (index !== -1) {
+        if (duplicatesIndexes.indexOf(index) === -1) {
+          duplicatesIndexes.push(index);
+        }
+      } else {
+        objects.push(object);
+        if (Array.isArray(object)) {
+          for (let i = 0, length = object.length; i < length; i += 1) {
+            inspectNode(object[i], objects, duplicatesIndexes);
+          }
+        } else {
+          const objectKeyList = Object.keys(object);
+          for (let i = 0, length = objectKeyList.length; i < length; i += 1) {
+            inspectNode(object[objectKeyList[i]], objects, duplicatesIndexes);
+          }
+        }
       }
     }
   }
-  function I(a, l) {
-    l = l || {};
-    const v = new Se(l);
-    v.noRefs || g(a, v);
-    let h = a;
-    return v.replacer && (h = v.replacer.call({ "": h }, "", h)), f(v, 0, h, !0, !0) ? v.dump + `
-` : "";
+  function dump2(input, options) {
+    options = options || {};
+    const state = new State(options);
+    if (!state.noRefs) getDuplicateReferences(input, state);
+    let value = input;
+    if (state.replacer) {
+      value = state.replacer.call({ "": value }, "", value);
+    }
+    if (writeNode(state, 0, value, true, true)) return state.dump + "\n";
+    return "";
   }
-  return Sa.dump = I, Sa;
+  dumper.dump = dump2;
+  return dumper;
 }
-var Qa;
-function Gr() {
-  if (Qa) return Y;
-  Qa = 1;
-  const n = jr(), r = qr();
-  function i(d, t) {
+var hasRequiredJsYaml;
+function requireJsYaml() {
+  if (hasRequiredJsYaml) return jsYaml;
+  hasRequiredJsYaml = 1;
+  const loader2 = requireLoader();
+  const dumper2 = requireDumper();
+  function renamed(from, to) {
     return function() {
-      throw new Error("Function yaml." + d + " is removed in js-yaml 4. Use yaml." + t + " instead, which is now safe by default.");
+      throw new Error("Function yaml." + from + " is removed in js-yaml 4. Use yaml." + to + " instead, which is now safe by default.");
     };
   }
-  return Y.Type = J(), Y.Schema = rr(), Y.FAILSAFE_SCHEMA = sr(), Y.JSON_SCHEMA = Cr(), Y.CORE_SCHEMA = mr(), Y.DEFAULT_SCHEMA = Na(), Y.load = n.load, Y.loadAll = n.loadAll, Y.dump = r.dump, Y.YAMLException = _e(), Y.types = {
-    binary: dr(),
-    float: cr(),
-    map: tr(),
-    null: lr(),
-    pairs: Tr(),
-    set: gr(),
-    timestamp: fr(),
-    bool: or(),
-    int: ur(),
-    merge: pr(),
-    omap: hr(),
-    seq: nr(),
-    str: ir()
-  }, Y.safeLoad = i("safeLoad", "load"), Y.safeLoadAll = i("safeLoadAll", "loadAll"), Y.safeDump = i("safeDump", "dump"), Y;
+  jsYaml.Type = requireType();
+  jsYaml.Schema = requireSchema();
+  jsYaml.FAILSAFE_SCHEMA = requireFailsafe();
+  jsYaml.JSON_SCHEMA = requireJson();
+  jsYaml.CORE_SCHEMA = requireCore();
+  jsYaml.DEFAULT_SCHEMA = require_default();
+  jsYaml.load = loader2.load;
+  jsYaml.loadAll = loader2.loadAll;
+  jsYaml.dump = dumper2.dump;
+  jsYaml.YAMLException = requireException();
+  jsYaml.types = {
+    binary: requireBinary(),
+    float: requireFloat(),
+    map: requireMap(),
+    null: require_null(),
+    pairs: requirePairs(),
+    set: requireSet(),
+    timestamp: requireTimestamp(),
+    bool: requireBool(),
+    int: requireInt(),
+    merge: requireMerge(),
+    omap: requireOmap(),
+    seq: requireSeq(),
+    str: requireStr()
+  };
+  jsYaml.safeLoad = renamed("safeLoad", "load");
+  jsYaml.safeLoadAll = renamed("safeLoadAll", "loadAll");
+  jsYaml.safeDump = renamed("safeDump", "dump");
+  return jsYaml;
 }
-var zr = Gr();
-const Yr = /* @__PURE__ */ Xr(zr), {
-  Type: bi,
-  Schema: Ri,
-  FAILSAFE_SCHEMA: Pi,
-  JSON_SCHEMA: Ai,
-  CORE_SCHEMA: xi,
-  DEFAULT_SCHEMA: ki,
-  load: Jr,
-  loadAll: _i,
-  dump: Kr,
-  YAMLException: Mi,
-  types: wi,
-  safeLoad: Fi,
-  safeLoadAll: Oi,
-  safeDump: Ei
-} = Yr;
-var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDescriptor, vr = Object.getOwnPropertyNames, Zr = Object.getPrototypeOf, ei = Object.prototype.hasOwnProperty, Lr = (n, r) => function() {
-  return r || (0, n[vr(n)[0]])((r = { exports: {} }).exports, r), r.exports;
-}, ai = (n, r, i, d) => {
-  if (r && typeof r == "object" || typeof r == "function")
-    for (let t of vr(r))
-      !ei.call(n, t) && t !== i && Sr(n, t, { get: () => r[t], enumerable: !(d = Qr(r, t)) || d.enumerable });
-  return n;
-}, Ir = (n, r, i) => (i = n != null ? $r(Zr(n)) : {}, ai(
+var jsYamlExports = requireJsYaml();
+const yaml = /* @__PURE__ */ getDefaultExportFromCjs(jsYamlExports);
+const {
+  Type,
+  Schema,
+  FAILSAFE_SCHEMA,
+  JSON_SCHEMA,
+  CORE_SCHEMA,
+  DEFAULT_SCHEMA,
+  load,
+  loadAll,
+  dump,
+  YAMLException,
+  types,
+  safeLoad,
+  safeLoadAll,
+  safeDump
+} = yaml;
+var __create = Object.create;
+var __defProp2 = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp2(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
   // If the importer is in node compatibility mode or this is not an ESM
   // file that has been converted to a CommonJS file using a Babel-
   // compatible transform (i.e. "__esModule" has not been set), then set
   // "default" to the CommonJS "module.exports" for node compatibility.
-  Sr(i, "default", { value: n, enumerable: !0 }),
-  n
-)), ri = Lr({
-  "src/mock-data/session.json"(n, r) {
-    r.exports = {
+  __defProp2(target, "default", { value: mod, enumerable: true }),
+  mod
+));
+var require_session = __commonJS({
+  "src/mock-data/session.json"(exports, module) {
+    module.exports = {
       WeekendInfo: {
         TrackName: "summit summit raceway",
         TrackID: 9,
@@ -2943,7 +4394,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
           {
             GroupNum: 10,
             GroupName: "Scenic",
-            IsScenic: !0,
+            IsScenic: true,
             Cameras: [
               {
                 CameraNum: 1,
@@ -6324,11 +7775,12 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
       }
     };
   }
-}), ii = Lr({
-  "src/mock-data/telemetry.json"(n, r) {
-    r.exports = {
+});
+var require_telemetry = __commonJS({
+  "src/mock-data/telemetry.json"(exports, module) {
+    module.exports = {
       SessionTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionTime",
         description: "Seconds since session start",
@@ -6339,7 +7791,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionTick: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionTick",
         description: "Current update number",
@@ -6350,7 +7802,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionNum: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionNum",
         description: "Session number",
@@ -6361,7 +7813,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionState: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionState",
         description: "Session state",
@@ -6372,7 +7824,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionUniqueID: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionUniqueID",
         description: "Session ID",
@@ -6383,7 +7835,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionFlags: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionFlags",
         description: "Session flags",
@@ -6394,7 +7846,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionTimeRemain: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionTimeRemain",
         description: "Seconds left till session ends",
@@ -6405,7 +7857,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionLapsRemain: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionLapsRemain",
         description: "Old laps left till session ends use SessionLapsRemainEx",
@@ -6416,7 +7868,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionLapsRemainEx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionLapsRemainEx",
         description: "New improved laps left till session ends",
@@ -6427,7 +7879,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionTimeTotal: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionTimeTotal",
         description: "Total number of seconds in session",
@@ -6438,7 +7890,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionLapsTotal: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionLapsTotal",
         description: "Total number of laps in session",
@@ -6449,7 +7901,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionJokerLapsRemain: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionJokerLapsRemain",
         description: "Joker laps remaining to be taken",
@@ -6460,18 +7912,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SessionOnJokerLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionOnJokerLap",
         description: "Player is currently completing a joker lap",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       SessionTimeOfDay: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SessionTimeOfDay",
         description: "Time of day in seconds",
@@ -6482,7 +7934,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RadioTransmitCarIdx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RadioTransmitCarIdx",
         description: "The car index of the current person speaking on the radio",
@@ -6493,7 +7945,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RadioTransmitRadioIdx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RadioTransmitRadioIdx",
         description: "The radio index of the current person speaking on the radio",
@@ -6504,7 +7956,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RadioTransmitFrequencyIdx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RadioTransmitFrequencyIdx",
         description: "The frequency index of the current person speaking on the radio",
@@ -6515,7 +7967,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       DisplayUnits: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "DisplayUnits",
         description: "Default units for the user interface 0 = english 1 = metric",
@@ -6526,73 +7978,73 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       DriverMarker: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "DriverMarker",
         description: "Driver activated flag",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       PushToPass: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PushToPass",
         description: "Push to pass button state",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       ManualBoost: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ManualBoost",
         description: "Hybrid manual boost state",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       ManualNoBoost: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ManualNoBoost",
         description: "Hybrid manual no boost state",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       IsOnTrack: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsOnTrack",
         description: "1=Car on track physics running with player in car",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       IsReplayPlaying: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsReplayPlaying",
         description: "0=replay not playing  1=replay playing",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       ReplayFrameNum: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplayFrameNum",
         description: "Integer replay frame number (60 per second)",
@@ -6603,7 +8055,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ReplayFrameNumEnd: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplayFrameNumEnd",
         description: "Integer replay frame number from end of tape",
@@ -6614,29 +8066,29 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       IsDiskLoggingEnabled: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsDiskLoggingEnabled",
         description: "0=disk based telemetry turned off  1=turned on",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       IsDiskLoggingActive: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsDiskLoggingActive",
         description: "0=disk based telemetry file not being written  1=being written",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       FrameRate: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FrameRate",
         description: "Average frames per second",
@@ -6647,7 +8099,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CpuUsageFG: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CpuUsageFG",
         description: "Percent of available tim fg thread took with a 1 sec avg",
@@ -6658,7 +8110,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       GpuUsage: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "GpuUsage",
         description: "Percent of available tim gpu took with a 1 sec avg",
@@ -6669,7 +8121,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ChanAvgLatency: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ChanAvgLatency",
         description: "Communications average latency",
@@ -6680,7 +8132,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ChanLatency: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ChanLatency",
         description: "Communications latency",
@@ -6691,7 +8143,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ChanQuality: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ChanQuality",
         description: "Communications quality",
@@ -6702,7 +8154,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ChanPartnerQuality: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ChanPartnerQuality",
         description: "Partner communications quality",
@@ -6713,7 +8165,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CpuUsageBG: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CpuUsageBG",
         description: "Percent of available tim bg thread took with a 1 sec avg",
@@ -6724,7 +8176,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ChanClockSkew: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ChanClockSkew",
         description: "Communications server clock skew",
@@ -6735,7 +8187,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       MemPageFaultSec: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "MemPageFaultSec",
         description: "Memory page faults per second",
@@ -6746,7 +8198,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarPosition: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarPosition",
         description: "Players position in race",
@@ -6757,7 +8209,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarClassPosition: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarClassPosition",
         description: "Players class position in race",
@@ -6768,7 +8220,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarClass: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarClass",
         description: "Player car class id",
@@ -6779,7 +8231,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerTrackSurface: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerTrackSurface",
         description: "Players car track surface type",
@@ -6790,7 +8242,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerTrackSurfaceMaterial: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerTrackSurfaceMaterial",
         description: "Players car track surface material type",
@@ -6801,7 +8253,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarIdx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarIdx",
         description: "Players carIdx",
@@ -6812,7 +8264,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarTeamIncidentCount: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarTeamIncidentCount",
         description: "Players team incident count for this session",
@@ -6823,7 +8275,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarMyIncidentCount: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarMyIncidentCount",
         description: "Players own incident count for this session",
@@ -6834,7 +8286,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarDriverIncidentCount: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarDriverIncidentCount",
         description: "Teams current drivers incident count for this session",
@@ -6845,7 +8297,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarWeightPenalty: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarWeightPenalty",
         description: "Players weight penalty",
@@ -6856,7 +8308,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarPowerAdjust: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarPowerAdjust",
         description: "Players power adjust",
@@ -6867,7 +8319,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarDryTireSetLimit: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarDryTireSetLimit",
         description: "Players dry tire set limit",
@@ -6878,7 +8330,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarTowTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarTowTime",
         description: "Players car is being towed if time is greater than zero",
@@ -6889,18 +8341,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerCarInPitStall: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarInPitStall",
         description: "Players car is properly in there pitstall",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       PlayerCarPitSvStatus: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerCarPitSvStatus",
         description: "Players car pit service status bits",
@@ -6911,7 +8363,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerTireCompound: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerTireCompound",
         description: "Players car current tire compound",
@@ -6922,7 +8374,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PlayerFastRepairsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PlayerFastRepairsUsed",
         description: "Players car number of fast repairs used",
@@ -6933,7 +8385,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxLap",
         description: "Laps started by car index",
@@ -7007,7 +8459,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxLapCompleted: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxLapCompleted",
         description: "Laps completed by car index",
@@ -7081,7 +8533,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxLapDistPct: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxLapDistPct",
         description: "Percentage distance around lap by car index",
@@ -7155,7 +8607,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxTrackSurface: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxTrackSurface",
         description: "Track surface type by car index",
@@ -7229,7 +8681,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxTrackSurfaceMaterial: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxTrackSurfaceMaterial",
         description: "Track surface material type by car index",
@@ -7303,81 +8755,81 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxOnPitRoad: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxOnPitRoad",
         description: "On pit road between the cones by car index",
         unit: "",
         varType: 1,
         value: [
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
         ]
       },
       CarIdxPosition: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxPosition",
         description: "Cars position in race by car index",
@@ -7451,7 +8903,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxClassPosition: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxClassPosition",
         description: "Cars class position in race by car index",
@@ -7525,7 +8977,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxClass: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxClass",
         description: "Cars class id by car index",
@@ -7599,7 +9051,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxF2Time: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxF2Time",
         description: "Race time behind leader or fastest lap time otherwise",
@@ -7673,7 +9125,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxEstTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxEstTime",
         description: "Estimated time to reach current location on track",
@@ -7747,7 +9199,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxLastLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxLastLapTime",
         description: "Cars last lap time",
@@ -7821,7 +9273,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxBestLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxBestLapTime",
         description: "Cars best lap time",
@@ -7895,7 +9347,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxBestLapNum: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxBestLapNum",
         description: "Cars best lap number",
@@ -7969,7 +9421,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxTireCompound: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxTireCompound",
         description: "Cars current tire compound",
@@ -8043,7 +9495,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxQualTireCompound: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxQualTireCompound",
         description: "Cars Qual tire compound",
@@ -8117,81 +9569,81 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxQualTireCompoundLocked: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxQualTireCompoundLocked",
         description: "Cars Qual tire compound is locked-in",
         unit: "",
         varType: 1,
         value: [
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
         ]
       },
       CarIdxFastRepairsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxFastRepairsUsed",
         description: "How many fast repairs each car has used",
@@ -8265,7 +9717,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PaceMode: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PaceMode",
         description: "Are we pacing or not",
@@ -8276,7 +9728,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxPaceLine: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxPaceLine",
         description: "What line cars are pacing in  or -1 if not pacing",
@@ -8350,7 +9802,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxPaceRow: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxPaceRow",
         description: "What row cars are pacing in  or -1 if not pacing",
@@ -8424,7 +9876,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxPaceFlags: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxPaceFlags",
         description: "Pacing status flags for each car",
@@ -8498,18 +9950,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       OnPitRoad: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "OnPitRoad",
         description: "Is the player car on pit road between the cones",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       CarIdxSteer: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxSteer",
         description: "Steering wheel angle by car index",
@@ -8583,7 +10035,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxRPM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxRPM",
         description: "Engine rpm by car index",
@@ -8657,7 +10109,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxGear: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxGear",
         description: "-1=reverse  0=neutral  1..n=current gear by car index",
@@ -8731,7 +10183,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelAngle: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelAngle",
         description: "Steering wheel angle",
@@ -8742,7 +10194,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Throttle: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Throttle",
         description: "0=off throttle to 1=full throttle",
@@ -8753,7 +10205,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Brake: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Brake",
         description: "0=brake released to 1=max pedal force",
@@ -8764,7 +10216,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Clutch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Clutch",
         description: "0=disengaged to 1=fully engaged",
@@ -8775,7 +10227,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Gear: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Gear",
         description: "-1=reverse  0=neutral  1..n=current gear",
@@ -8786,7 +10238,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RPM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RPM",
         description: "Engine rpm",
@@ -8797,7 +10249,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Lap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Lap",
         description: "Laps started count",
@@ -8808,7 +10260,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapCompleted: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapCompleted",
         description: "Laps completed count",
@@ -8819,7 +10271,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDist: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDist",
         description: "Meters traveled from S/F this lap",
@@ -8830,7 +10282,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDistPct: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDistPct",
         description: "Percentage distance around lap",
@@ -8841,7 +10293,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RaceLaps: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RaceLaps",
         description: "Laps completed in race",
@@ -8852,7 +10304,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapBestLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapBestLap",
         description: "Players best lap number",
@@ -8863,7 +10315,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapBestLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapBestLapTime",
         description: "Players best lap time",
@@ -8874,7 +10326,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapLastLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapLastLapTime",
         description: "Players last lap time",
@@ -8885,7 +10337,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapCurrentLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapCurrentLapTime",
         description: "Estimate of players current lap time as shown in F3 box",
@@ -8896,7 +10348,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapLasNLapSeq: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapLasNLapSeq",
         description: "Player num consecutive clean laps completed for N average",
@@ -8907,7 +10359,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapLastNLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapLastNLapTime",
         description: "Player last N average lap time",
@@ -8918,7 +10370,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapBestNLapLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapBestNLapLap",
         description: "Player last lap in best N average lap time",
@@ -8929,7 +10381,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapBestNLapTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapBestNLapTime",
         description: "Player best N average lap time",
@@ -8940,7 +10392,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToBestLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToBestLap",
         description: "Delta time for best lap",
@@ -8951,7 +10403,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToBestLap_DD: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToBestLap_DD",
         description: "Rate of change of delta time for best lap",
@@ -8962,18 +10414,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToBestLap_OK: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToBestLap_OK",
         description: "Delta time for best lap is valid",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       LapDeltaToOptimalLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToOptimalLap",
         description: "Delta time for optimal lap",
@@ -8984,7 +10436,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToOptimalLap_DD: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToOptimalLap_DD",
         description: "Rate of change of delta time for optimal lap",
@@ -8995,18 +10447,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToOptimalLap_OK: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToOptimalLap_OK",
         description: "Delta time for optimal lap is valid",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       LapDeltaToSessionBestLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionBestLap",
         description: "Delta time for session best lap",
@@ -9017,7 +10469,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionBestLap_DD: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionBestLap_DD",
         description: "Rate of change of delta time for session best lap",
@@ -9028,18 +10480,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionBestLap_OK: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionBestLap_OK",
         description: "Delta time for session best lap is valid",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       LapDeltaToSessionOptimalLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionOptimalLap",
         description: "Delta time for session optimal lap",
@@ -9050,7 +10502,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionOptimalLap_DD: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionOptimalLap_DD",
         description: "Rate of change of delta time for session optimal lap",
@@ -9061,18 +10513,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionOptimalLap_OK: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionOptimalLap_OK",
         description: "Delta time for session optimal lap is valid",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       LapDeltaToSessionLastlLap: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionLastlLap",
         description: "Delta time for session last lap",
@@ -9083,7 +10535,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionLastlLap_DD: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionLastlLap_DD",
         description: "Rate of change of delta time for session last lap",
@@ -9094,18 +10546,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LapDeltaToSessionLastlLap_OK: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LapDeltaToSessionLastlLap_OK",
         description: "Delta time for session last lap is valid",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       Speed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Speed",
         description: "GPS vehicle speed",
@@ -9116,7 +10568,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Yaw: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Yaw",
         description: "Yaw orientation",
@@ -9127,7 +10579,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       YawNorth: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "YawNorth",
         description: "Yaw orientation relative to north",
@@ -9138,7 +10590,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Pitch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Pitch",
         description: "Pitch orientation",
@@ -9149,7 +10601,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Roll: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Roll",
         description: "Roll orientation",
@@ -9160,7 +10612,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       EnterExitReset: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "EnterExitReset",
         description: "Indicate action the reset key will take 0 enter 1 exit 2 reset",
@@ -9171,7 +10623,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TrackTemp: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TrackTemp",
         description: "Deprecated  set to TrackTempCrew",
@@ -9182,7 +10634,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TrackTempCrew: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TrackTempCrew",
         description: "Temperature of track measured by crew around track",
@@ -9193,7 +10645,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       AirTemp: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "AirTemp",
         description: "Temperature of air at start/finish line",
@@ -9204,7 +10656,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       WeatherType: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "WeatherType",
         description: "Weather type (0=constant  1=dynamic)",
@@ -9215,7 +10667,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Skies: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Skies",
         description: "Skies (0=clear/1=p cloudy/2=m cloudy/3=overcast)",
@@ -9226,7 +10678,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       AirDensity: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "AirDensity",
         description: "Density of air at start/finish line",
@@ -9237,7 +10689,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       AirPressure: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "AirPressure",
         description: "Pressure of air at start/finish line",
@@ -9248,7 +10700,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       WindVel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "WindVel",
         description: "Wind velocity at start/finish line",
@@ -9259,7 +10711,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       WindDir: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "WindDir",
         description: "Wind direction at start/finish line",
@@ -9270,7 +10722,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RelativeHumidity: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RelativeHumidity",
         description: "Relative Humidity",
@@ -9281,7 +10733,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FogLevel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FogLevel",
         description: "Fog level",
@@ -9292,7 +10744,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       DCLapStatus: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "DCLapStatus",
         description: "Status of driver change lap requirements",
@@ -9303,7 +10755,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       DCDriversSoFar: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "DCDriversSoFar",
         description: "Number of team drivers who have run a stint",
@@ -9314,29 +10766,29 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       OkToReloadTextures: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "OkToReloadTextures",
         description: "True if it is ok to reload car textures at this time",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       LoadNumTextures: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LoadNumTextures",
         description: "True if the car_num texture will be loaded",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       CarLeftRight: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CarLeftRight",
         description: "Notify if car is to the left or right of driver",
@@ -9347,40 +10799,40 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitsOpen: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitsOpen",
         description: "True if pit stop is allowed for the current player",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       VidCapEnabled: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VidCapEnabled",
         description: "True if video capture system is enabled",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       VidCapActive: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VidCapActive",
         description: "True if video currently being captured",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       PitRepairLeft: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitRepairLeft",
         description: "Time left for mandatory pit repairs if repairs are active",
@@ -9391,7 +10843,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitOptRepairLeft: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitOptRepairLeft",
         description: "Time left for optional repairs if repairs are active",
@@ -9402,18 +10854,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitstopActive: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitstopActive",
         description: "Is the player getting pit stop service",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       FastRepairUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FastRepairUsed",
         description: "How many fast repairs used so far",
@@ -9424,7 +10876,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FastRepairAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FastRepairAvailable",
         description: "How many fast repairs left  255 is unlimited",
@@ -9435,7 +10887,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFTiresUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFTiresUsed",
         description: "How many left front tires used so far",
@@ -9446,7 +10898,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFTiresUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFTiresUsed",
         description: "How many right front tires used so far",
@@ -9457,7 +10909,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRTiresUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRTiresUsed",
         description: "How many left rear tires used so far",
@@ -9468,7 +10920,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRTiresUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRTiresUsed",
         description: "How many right rear tires used so far",
@@ -9479,7 +10931,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LeftTireSetsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LeftTireSetsUsed",
         description: "How many left tire sets used so far",
@@ -9490,7 +10942,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RightTireSetsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RightTireSetsUsed",
         description: "How many right tire sets used so far",
@@ -9501,7 +10953,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FrontTireSetsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FrontTireSetsUsed",
         description: "How many front tire sets used so far",
@@ -9512,7 +10964,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RearTireSetsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RearTireSetsUsed",
         description: "How many rear tire sets used so far",
@@ -9523,7 +10975,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireSetsUsed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireSetsUsed",
         description: "How many tire sets used so far",
@@ -9534,7 +10986,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFTiresAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFTiresAvailable",
         description: "How many left front tires are remaining  255 is unlimited",
@@ -9545,7 +10997,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFTiresAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFTiresAvailable",
         description: "How many right front tires are remaining  255 is unlimited",
@@ -9556,7 +11008,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRTiresAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRTiresAvailable",
         description: "How many left rear tires are remaining  255 is unlimited",
@@ -9567,7 +11019,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRTiresAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRTiresAvailable",
         description: "How many right rear tires are remaining  255 is unlimited",
@@ -9578,7 +11030,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LeftTireSetsAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LeftTireSetsAvailable",
         description: "How many left tire sets are remaining  255 is unlimited",
@@ -9589,7 +11041,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RightTireSetsAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RightTireSetsAvailable",
         description: "How many right tire sets are remaining  255 is unlimited",
@@ -9600,7 +11052,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FrontTireSetsAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FrontTireSetsAvailable",
         description: "How many front tire sets are remaining  255 is unlimited",
@@ -9611,7 +11063,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RearTireSetsAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RearTireSetsAvailable",
         description: "How many rear tire sets are remaining  255 is unlimited",
@@ -9622,7 +11074,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireSetsAvailable: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireSetsAvailable",
         description: "How many tire sets are remaining  255 is unlimited",
@@ -9633,7 +11085,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CamCarIdx: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CamCarIdx",
         description: "Active camera's focus car index",
@@ -9644,7 +11096,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CamCameraNumber: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CamCameraNumber",
         description: "Active camera number",
@@ -9655,7 +11107,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CamGroupNumber: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CamGroupNumber",
         description: "Active camera group number",
@@ -9666,7 +11118,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CamCameraState: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "CamCameraState",
         description: "State of camera system",
@@ -9677,29 +11129,29 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       IsOnTrackCar: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsOnTrackCar",
         description: "1=Car on track physics running",
         unit: "",
         varType: 1,
         value: [
-          !0
+          true
         ]
       },
       IsInGarage: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "IsInGarage",
         description: "1=Car in garage physics running",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       SteeringWheelPctTorque: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelPctTorque",
         description: "Force feedback % max torque on steering shaft unsigned",
@@ -9710,7 +11162,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelPctTorqueSign: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelPctTorqueSign",
         description: "Force feedback % max torque on steering shaft signed",
@@ -9721,7 +11173,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelPctTorqueSignStops: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelPctTorqueSignStops",
         description: "Force feedback % max torque on steering shaft signed stops",
@@ -9732,7 +11184,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelPctDamper: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelPctDamper",
         description: "Force feedback % max damping",
@@ -9743,7 +11195,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelAngleMax: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelAngleMax",
         description: "Steering wheel max angle",
@@ -9754,7 +11206,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelLimiter: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelLimiter",
         description: "Force feedback limiter strength limits impacts and oscillation",
@@ -9765,7 +11217,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ShiftIndicatorPct: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ShiftIndicatorPct",
         description: "DEPRECATED use DriverCarSLBlinkRPM instead",
@@ -9776,7 +11228,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ShiftPowerPct: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ShiftPowerPct",
         description: "Friction torque applied to gears when shifting or grinding",
@@ -9787,7 +11239,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ShiftGrindRPM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ShiftGrindRPM",
         description: "RPM of shifter grinding noise",
@@ -9798,7 +11250,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ThrottleRaw: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ThrottleRaw",
         description: "Raw throttle input 0=off throttle to 1=full throttle",
@@ -9809,7 +11261,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       BrakeRaw: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "BrakeRaw",
         description: "Raw brake input 0=brake released to 1=max pedal force",
@@ -9820,7 +11272,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       HandbrakeRaw: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "HandbrakeRaw",
         description: "Raw handbrake input 0=handbrake released to 1=max force",
@@ -9831,7 +11283,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelPeakForceNm: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelPeakForceNm",
         description: "Peak torque mapping to direct input units for FFB",
@@ -9842,7 +11294,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelMaxForceNm: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelMaxForceNm",
         description: "Value of strength or max force slider in Nm for FFB",
@@ -9853,29 +11305,29 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelUseLinear: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelUseLinear",
         description: "True if steering wheel force is using linear mode",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       BrakeABSactive: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "BrakeABSactive",
         description: "true if abs is currently reducing brake force pressure",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       EngineWarnings: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "EngineWarnings",
         description: "Bitfield for warning lights",
@@ -9886,7 +11338,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FuelLevel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FuelLevel",
         description: "Liters of fuel remaining",
@@ -9897,7 +11349,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FuelLevelPct: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FuelLevelPct",
         description: "Percent fuel remaining",
@@ -9908,7 +11360,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvFlags: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvFlags",
         description: "Bitfield of pit service checkboxes",
@@ -9919,7 +11371,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvLFP: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvLFP",
         description: "Pit service left front tire pressure",
@@ -9930,7 +11382,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvRFP: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvRFP",
         description: "Pit service right front tire pressure",
@@ -9941,7 +11393,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvLRP: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvLRP",
         description: "Pit service left rear tire pressure",
@@ -9952,7 +11404,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvRRP: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvRRP",
         description: "Pit service right rear tire pressure",
@@ -9963,7 +11415,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvFuel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvFuel",
         description: "Pit service fuel add amount",
@@ -9974,7 +11426,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitSvTireCompound: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitSvTireCompound",
         description: "Pit service pending tire compound",
@@ -9985,81 +11437,81 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       CarIdxP2P_Status: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxP2P_Status",
         description: "Push2Pass active or not",
         unit: "",
         varType: 1,
         value: [
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1,
-          !1
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
         ]
       },
       CarIdxP2P_Count: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 64,
         name: "CarIdxP2P_Count",
         description: "Push2Pass count of usage (or remaining in Race)",
@@ -10133,7 +11585,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ReplayPlaySpeed: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplayPlaySpeed",
         description: "Replay playback speed",
@@ -10144,18 +11596,18 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ReplayPlaySlowMotion: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplayPlaySlowMotion",
         description: "0=not slow motion  1=replay is in slow motion",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       ReplaySessionTime: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplaySessionTime",
         description: "Seconds since replay session start",
@@ -10166,7 +11618,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ReplaySessionNum: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ReplaySessionNum",
         description: "Replay session number",
@@ -10177,7 +11629,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireLF_RumblePitch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireLF_RumblePitch",
         description: "Players LF Tire Sound rumblestrip pitch",
@@ -10188,7 +11640,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireRF_RumblePitch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireRF_RumblePitch",
         description: "Players RF Tire Sound rumblestrip pitch",
@@ -10199,7 +11651,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireLR_RumblePitch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireLR_RumblePitch",
         description: "Players LR Tire Sound rumblestrip pitch",
@@ -10210,7 +11662,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       TireRR_RumblePitch: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "TireRR_RumblePitch",
         description: "Players RR Tire Sound rumblestrip pitch",
@@ -10221,7 +11673,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelTorque_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "SteeringWheelTorque_ST",
         description: "Output torque on steering shaft at 360 Hz",
@@ -10237,7 +11689,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       SteeringWheelTorque: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "SteeringWheelTorque",
         description: "Output torque on steering shaft",
@@ -10248,7 +11700,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityZ_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "VelocityZ_ST",
         description: "Z velocity",
@@ -10264,7 +11716,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityY_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "VelocityY_ST",
         description: "Y velocity",
@@ -10280,7 +11732,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityX_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "VelocityX_ST",
         description: "X velocity",
@@ -10296,7 +11748,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityZ: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VelocityZ",
         description: "Z velocity",
@@ -10307,7 +11759,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityY: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VelocityY",
         description: "Y velocity",
@@ -10318,7 +11770,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VelocityX: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VelocityX",
         description: "X velocity",
@@ -10329,7 +11781,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       YawRate_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "YawRate_ST",
         description: "Yaw rate at 360 Hz",
@@ -10345,7 +11797,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitchRate_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "PitchRate_ST",
         description: "Pitch rate at 360 Hz",
@@ -10361,7 +11813,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RollRate_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "RollRate_ST",
         description: "Roll rate at 360 Hz",
@@ -10377,7 +11829,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       YawRate: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "YawRate",
         description: "Yaw rate",
@@ -10388,7 +11840,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       PitchRate: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "PitchRate",
         description: "Pitch rate",
@@ -10399,7 +11851,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RollRate: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RollRate",
         description: "Roll rate",
@@ -10410,7 +11862,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VertAccel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "VertAccel_ST",
         description: "Vertical acceleration (including gravity) at 360 Hz",
@@ -10426,7 +11878,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LatAccel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LatAccel_ST",
         description: "Lateral acceleration (including gravity) at 360 Hz",
@@ -10442,7 +11894,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LongAccel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LongAccel_ST",
         description: "Longitudinal acceleration (including gravity) at 360 Hz",
@@ -10458,7 +11910,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       VertAccel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "VertAccel",
         description: "Vertical acceleration (including gravity)",
@@ -10469,7 +11921,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LatAccel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LatAccel",
         description: "Lateral acceleration (including gravity)",
@@ -10480,7 +11932,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LongAccel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LongAccel",
         description: "Longitudinal acceleration (including gravity)",
@@ -10491,29 +11943,29 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dcStarter: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dcStarter",
         description: "In car trigger car starter",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       dcPitSpeedLimiterToggle: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dcPitSpeedLimiterToggle",
         description: "In car traction control active",
         unit: "",
         varType: 1,
         value: [
-          !1
+          false
         ]
       },
       dpRFTireChange: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpRFTireChange",
         description: "Pitstop rf tire change request",
@@ -10524,7 +11976,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpLFTireChange: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpLFTireChange",
         description: "Pitstop lf tire change request",
@@ -10535,7 +11987,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpRRTireChange: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpRRTireChange",
         description: "Pitstop rr tire change request",
@@ -10546,7 +11998,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpLRTireChange: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpLRTireChange",
         description: "Pitstop lr tire change request",
@@ -10557,7 +12009,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpFuelFill: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpFuelFill",
         description: "Pitstop fuel fill flag",
@@ -10568,7 +12020,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpWindshieldTearoff: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpWindshieldTearoff",
         description: "Pitstop windshield tearoff",
@@ -10579,7 +12031,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpFuelAddKg: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpFuelAddKg",
         description: "Pitstop fuel add ammount",
@@ -10590,7 +12042,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpFastRepair: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpFastRepair",
         description: "Pitstop fast repair set",
@@ -10601,7 +12053,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpLFTireColdPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpLFTireColdPress",
         description: "Pitstop lf tire cold pressure adjustment",
@@ -10612,7 +12064,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpRFTireColdPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpRFTireColdPress",
         description: "Pitstop rf cold tire pressure adjustment",
@@ -10623,7 +12075,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpLRTireColdPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpLRTireColdPress",
         description: "Pitstop lr tire cold pressure adjustment",
@@ -10634,7 +12086,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       dpRRTireColdPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "dpRRTireColdPress",
         description: "Pitstop rr cold tire pressure adjustment",
@@ -10645,7 +12097,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       WaterTemp: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "WaterTemp",
         description: "Engine coolant temp",
@@ -10656,7 +12108,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       WaterLevel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "WaterLevel",
         description: "Engine coolant level",
@@ -10667,7 +12119,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FuelPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FuelPress",
         description: "Engine fuel pressure",
@@ -10678,7 +12130,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       FuelUsePerHour: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "FuelUsePerHour",
         description: "Engine fuel used instantaneous",
@@ -10689,7 +12141,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       OilTemp: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "OilTemp",
         description: "Engine oil temperature",
@@ -10700,7 +12152,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       OilPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "OilPress",
         description: "Engine oil pressure",
@@ -10711,7 +12163,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       OilLevel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "OilLevel",
         description: "Engine oil level",
@@ -10722,7 +12174,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       Voltage: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "Voltage",
         description: "Engine voltage",
@@ -10733,7 +12185,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       ManifoldPress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "ManifoldPress",
         description: "Engine manifold pressure",
@@ -10744,7 +12196,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFbrakeLinePress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFbrakeLinePress",
         description: "RF brake line pressure",
@@ -10755,7 +12207,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFcoldPressure: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFcoldPressure",
         description: "RF tire cold pressure  as set in the garage",
@@ -10766,7 +12218,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFtempCL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFtempCL",
         description: "RF tire left carcass temperature",
@@ -10777,7 +12229,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFtempCM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFtempCM",
         description: "RF tire middle carcass temperature",
@@ -10788,7 +12240,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFtempCR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFtempCR",
         description: "RF tire right carcass temperature",
@@ -10799,7 +12251,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFwearL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFwearL",
         description: "RF tire left percent tread remaining",
@@ -10810,7 +12262,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFwearM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFwearM",
         description: "RF tire middle percent tread remaining",
@@ -10821,7 +12273,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFwearR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFwearR",
         description: "RF tire right percent tread remaining",
@@ -10832,7 +12284,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFbrakeLinePress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFbrakeLinePress",
         description: "LF brake line pressure",
@@ -10843,7 +12295,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFcoldPressure: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFcoldPressure",
         description: "LF tire cold pressure  as set in the garage",
@@ -10854,7 +12306,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFtempCL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFtempCL",
         description: "LF tire left carcass temperature",
@@ -10865,7 +12317,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFtempCM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFtempCM",
         description: "LF tire middle carcass temperature",
@@ -10876,7 +12328,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFtempCR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFtempCR",
         description: "LF tire right carcass temperature",
@@ -10887,7 +12339,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFwearL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFwearL",
         description: "LF tire left percent tread remaining",
@@ -10898,7 +12350,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFwearM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFwearM",
         description: "LF tire middle percent tread remaining",
@@ -10909,7 +12361,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFwearR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFwearR",
         description: "LF tire right percent tread remaining",
@@ -10920,7 +12372,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRbrakeLinePress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRbrakeLinePress",
         description: "RR brake line pressure",
@@ -10931,7 +12383,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRcoldPressure: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRcoldPressure",
         description: "RR tire cold pressure  as set in the garage",
@@ -10942,7 +12394,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRtempCL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRtempCL",
         description: "RR tire left carcass temperature",
@@ -10953,7 +12405,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRtempCM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRtempCM",
         description: "RR tire middle carcass temperature",
@@ -10964,7 +12416,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRtempCR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRtempCR",
         description: "RR tire right carcass temperature",
@@ -10975,7 +12427,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRwearL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRwearL",
         description: "RR tire left percent tread remaining",
@@ -10986,7 +12438,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRwearM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRwearM",
         description: "RR tire middle percent tread remaining",
@@ -10997,7 +12449,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRwearR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRwearR",
         description: "RR tire right percent tread remaining",
@@ -11008,7 +12460,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRbrakeLinePress: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRbrakeLinePress",
         description: "LR brake line pressure",
@@ -11019,7 +12471,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRcoldPressure: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRcoldPressure",
         description: "LR tire cold pressure  as set in the garage",
@@ -11030,7 +12482,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRtempCL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRtempCL",
         description: "LR tire left carcass temperature",
@@ -11041,7 +12493,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRtempCM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRtempCM",
         description: "LR tire middle carcass temperature",
@@ -11052,7 +12504,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRtempCR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRtempCR",
         description: "LR tire right carcass temperature",
@@ -11063,7 +12515,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRwearL: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRwearL",
         description: "LR tire left percent tread remaining",
@@ -11074,7 +12526,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRwearM: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRwearM",
         description: "LR tire middle percent tread remaining",
@@ -11085,7 +12537,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRwearR: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRwearR",
         description: "LR tire right percent tread remaining",
@@ -11096,7 +12548,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRshockDefl: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRshockDefl",
         description: "RR shock deflection",
@@ -11107,7 +12559,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRshockDefl_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "RRshockDefl_ST",
         description: "RR shock deflection at 360 Hz",
@@ -11123,7 +12575,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRshockVel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RRshockVel",
         description: "RR shock velocity",
@@ -11134,7 +12586,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RRshockVel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "RRshockVel_ST",
         description: "RR shock velocity at 360 Hz",
@@ -11150,7 +12602,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRshockDefl: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRshockDefl",
         description: "LR shock deflection",
@@ -11161,7 +12613,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRshockDefl_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LRshockDefl_ST",
         description: "LR shock deflection at 360 Hz",
@@ -11177,7 +12629,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRshockVel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LRshockVel",
         description: "LR shock velocity",
@@ -11188,7 +12640,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LRshockVel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LRshockVel_ST",
         description: "LR shock velocity at 360 Hz",
@@ -11204,7 +12656,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFshockDefl: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFshockDefl",
         description: "RF shock deflection",
@@ -11215,7 +12667,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFshockDefl_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "RFshockDefl_ST",
         description: "RF shock deflection at 360 Hz",
@@ -11231,7 +12683,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFshockVel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "RFshockVel",
         description: "RF shock velocity",
@@ -11242,7 +12694,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       RFshockVel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "RFshockVel_ST",
         description: "RF shock velocity at 360 Hz",
@@ -11258,7 +12710,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFshockDefl: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFshockDefl",
         description: "LF shock deflection",
@@ -11269,7 +12721,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFshockDefl_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LFshockDefl_ST",
         description: "LF shock deflection at 360 Hz",
@@ -11285,7 +12737,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFshockVel: {
-        countAsTime: !1,
+        countAsTime: false,
         length: 1,
         name: "LFshockVel",
         description: "LF shock velocity",
@@ -11296,7 +12748,7 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
         ]
       },
       LFshockVel_ST: {
-        countAsTime: !0,
+        countAsTime: true,
         length: 6,
         name: "LFshockVel_ST",
         description: "LF shock velocity at 360 Hz",
@@ -11313,115 +12765,199 @@ var $r = Object.create, Sr = Object.defineProperty, Qr = Object.getOwnPropertyDe
       }
     };
   }
-}), ni = () => kr(_r(import.meta.url)), Ae = /* @__PURE__ */ ((n) => (n[n.None = 0] = "None", n[n.Error = 1] = "Error", n[n.Warn = 2] = "Warn", n[n.Info = 3] = "Info", n[n.Debug = 4] = "Debug", n))(Ae || {}), ti = async () => {
-  const n = await Promise.resolve().then(() => Ir(ri()));
-  return Kr(n.default);
-}, si = async () => (await Promise.resolve().then(() => Ir(ii()))).default, se = null, he = null, li = class {
+});
+var getDirname = () => dirname(fileURLToPath$1(import.meta.url));
+var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
+  LogLevel2[LogLevel2["None"] = 0] = "None";
+  LogLevel2[LogLevel2["Error"] = 1] = "Error";
+  LogLevel2[LogLevel2["Warn"] = 2] = "Warn";
+  LogLevel2[LogLevel2["Info"] = 3] = "Info";
+  LogLevel2[LogLevel2["Debug"] = 4] = "Debug";
+  return LogLevel2;
+})(LogLevel || {});
+var loadMockSessionData = async () => {
+  const json2 = await Promise.resolve().then(() => __toESM(require_session()));
+  return dump(json2.default);
+};
+var loadMockTelemetry = async () => {
+  const json2 = await Promise.resolve().then(() => __toESM(require_telemetry()));
+  return json2.default;
+};
+var mockTelemetry = null;
+var mockSession = null;
+var MockSDK = class {
   constructor() {
-    K(this, "currDataVersion", 1);
-    K(this, "isMocked", !0);
-    K(this, "enableLogging", !1);
-    K(this, "logLevel", 0);
-    K(this, "_isRunning", !1);
-    this._loadMockData().catch((n) => {
-      La("Error loading mock data for mock SDK:", n);
-    }), Pr(
+    __publicField(this, "currDataVersion", 1);
+    __publicField(this, "isMocked", true);
+    __publicField(this, "enableLogging", false);
+    __publicField(this, "logLevel", 0);
+    __publicField(this, "_isRunning", false);
+    this._loadMockData().catch((reason) => {
+      error("Error loading mock data for mock SDK:", reason);
+    });
+    warn(
       "Attempting to access iRacing SDK on unsupported platform!",
-      `
-Returning mock SDK for testing purposes. (Only win32 supported)`
+      "\nReturning mock SDK for testing purposes. (Only win32 supported)"
     );
   }
   async _loadMockData() {
-    const [n, r] = await Promise.all([
-      he ? Promise.resolve(he) : ti(),
-      se ? Promise.resolve(se) : si()
+    const [session, telemetry] = await Promise.all([
+      !mockSession ? loadMockSessionData() : Promise.resolve(mockSession),
+      !mockTelemetry ? loadMockTelemetry() : Promise.resolve(mockTelemetry)
     ]);
-    he = n, se = r;
+    mockSession = session;
+    mockTelemetry = telemetry;
   }
   startSDK() {
-    return this._isRunning = !0, !0;
+    this._isRunning = true;
+    return true;
   }
   stopSDK() {
-    this._isRunning = !1;
+    this._isRunning = false;
   }
   isRunning() {
     return this._isRunning;
   }
-  waitForData(n) {
-    const r = !he || !se;
-    return this._isRunning && !r;
+  waitForData(_timeout) {
+    const dataNotReady = !mockSession || !mockTelemetry;
+    return this._isRunning && !dataNotReady;
   }
   getSessionData() {
-    return he ?? "";
+    return mockSession ?? "";
   }
   getSessionConnectionID() {
-    return he ? 1 : -1;
+    return mockSession ? 1 : -1;
   }
   getSessionVersionNum() {
-    return he ? 1 : -1;
+    return mockSession ? 1 : -1;
   }
   getTelemetryData() {
-    return se || {};
+    if (!mockTelemetry) {
+      return {};
+    }
+    return mockTelemetry;
   }
-  getTelemetryVariable(n) {
-    if (!se)
+  getTelemetryVariable(name) {
+    if (!mockTelemetry) {
       throw new Error("Attempted accessing mock telemetry before it was loaded.");
-    return typeof n == "number" ? Object.values(se)[n] : se[n];
+    }
+    if (typeof name === "number") {
+      return Object.values(mockTelemetry)[name];
+    }
+    return mockTelemetry[name];
   }
-  getTelemetryVariableIndex(n) {
+  getTelemetryVariableIndex(_name) {
     return 0;
   }
-  broadcast(n, ...r) {
-    return Ar("Mocking SDK call:", n, ...r), !0;
+  broadcast(message, ...args) {
+    log("Mocking SDK call:", message, ...args);
+    return true;
   }
   __getTelemetryTypes() {
     return {};
   }
-}, oi = ni(), Ia;
+};
+var DIR_NAME = getDirname();
+var sdkBinding;
 try {
-  const n = xr(oi, "../..");
-  Ia = Wr(n).iRacingSdkNode;
+  const rootDir = join(DIR_NAME, "../..");
+  const binding = importNativeModule(rootDir);
+  sdkBinding = binding.iRacingSdkNode;
 } catch {
-  console.warn("Failed to load native iRacing SDK module. Loading mock SDK instead."), Ia = li;
+  console.warn("Failed to load native iRacing SDK module. Loading mock SDK instead.");
+  sdkBinding = MockSDK;
 }
-var ui = Ia, B = /* @__PURE__ */ ((n) => (n[n.CameraSwitchPos = 0] = "CameraSwitchPos", n[n.CameraSwitchNum = 1] = "CameraSwitchNum", n[n.CameraSetState = 2] = "CameraSetState", n[n.ReplaySetPlaySpeed = 3] = "ReplaySetPlaySpeed", n[n.ReplaySetPlayPosition = 4] = "ReplaySetPlayPosition", n[n.ReplaySearch = 5] = "ReplaySearch", n[n.ReplaySetState = 6] = "ReplaySetState", n[n.ReloadTextures = 7] = "ReloadTextures", n[n.ChatCommand = 8] = "ChatCommand", n[n.PitCommand = 9] = "PitCommand", n[n.TelemCommand = 10] = "TelemCommand", n[n.FFBCommand = 11] = "FFBCommand", n[n.ReplaySearchSessionTime = 12] = "ReplaySearchSessionTime", n[n.VideoCapture = 13] = "VideoCapture", n[n.UnusedPlaceholder = 14] = "UnusedPlaceholder", n))(B || {}), Dr = /* @__PURE__ */ ((n) => (n[n.Macro = 0] = "Macro", n[n.BeginChat = 1] = "BeginChat", n[n.Reply = 2] = "Reply", n[n.Cancel = 3] = "Cancel", n))(Dr || {}), je = /* @__PURE__ */ ((n) => (n[n.Stop = 0] = "Stop", n[n.Start = 1] = "Start", n[n.Restart = 2] = "Restart", n))(je || {}), Da = /* @__PURE__ */ ((n) => (n[n.All = 0] = "All", n[n.CarIndex = 1] = "CarIndex", n))(Da || {}), ci = "http://127.0.0.1:32034/get_sim_status?object=simStatus", Ci = () => new Promise((n, r) => {
-  wr.get(ci, (d) => {
-    let t = "";
-    d.on("data", (u) => {
-      t += u;
-    }), d.on("end", () => {
-      typeof t != "string" && r(new Error("Invalid payload from sim received")), n(t.includes("running:1"));
+var NativeSDK = sdkBinding;
+var BroadcastMessages = /* @__PURE__ */ ((BroadcastMessages2) => {
+  BroadcastMessages2[BroadcastMessages2["CameraSwitchPos"] = 0] = "CameraSwitchPos";
+  BroadcastMessages2[BroadcastMessages2["CameraSwitchNum"] = 1] = "CameraSwitchNum";
+  BroadcastMessages2[BroadcastMessages2["CameraSetState"] = 2] = "CameraSetState";
+  BroadcastMessages2[BroadcastMessages2["ReplaySetPlaySpeed"] = 3] = "ReplaySetPlaySpeed";
+  BroadcastMessages2[BroadcastMessages2["ReplaySetPlayPosition"] = 4] = "ReplaySetPlayPosition";
+  BroadcastMessages2[BroadcastMessages2["ReplaySearch"] = 5] = "ReplaySearch";
+  BroadcastMessages2[BroadcastMessages2["ReplaySetState"] = 6] = "ReplaySetState";
+  BroadcastMessages2[BroadcastMessages2["ReloadTextures"] = 7] = "ReloadTextures";
+  BroadcastMessages2[BroadcastMessages2["ChatCommand"] = 8] = "ChatCommand";
+  BroadcastMessages2[BroadcastMessages2["PitCommand"] = 9] = "PitCommand";
+  BroadcastMessages2[BroadcastMessages2["TelemCommand"] = 10] = "TelemCommand";
+  BroadcastMessages2[BroadcastMessages2["FFBCommand"] = 11] = "FFBCommand";
+  BroadcastMessages2[BroadcastMessages2["ReplaySearchSessionTime"] = 12] = "ReplaySearchSessionTime";
+  BroadcastMessages2[BroadcastMessages2["VideoCapture"] = 13] = "VideoCapture";
+  BroadcastMessages2[BroadcastMessages2["UnusedPlaceholder"] = 14] = "UnusedPlaceholder";
+  return BroadcastMessages2;
+})(BroadcastMessages || {});
+var ChatCommand = /* @__PURE__ */ ((ChatCommand2) => {
+  ChatCommand2[ChatCommand2["Macro"] = 0] = "Macro";
+  ChatCommand2[ChatCommand2["BeginChat"] = 1] = "BeginChat";
+  ChatCommand2[ChatCommand2["Reply"] = 2] = "Reply";
+  ChatCommand2[ChatCommand2["Cancel"] = 3] = "Cancel";
+  return ChatCommand2;
+})(ChatCommand || {});
+var TelemetryCommand = /* @__PURE__ */ ((TelemetryCommand2) => {
+  TelemetryCommand2[TelemetryCommand2["Stop"] = 0] = "Stop";
+  TelemetryCommand2[TelemetryCommand2["Start"] = 1] = "Start";
+  TelemetryCommand2[TelemetryCommand2["Restart"] = 2] = "Restart";
+  return TelemetryCommand2;
+})(TelemetryCommand || {});
+var ReloadTexturesCommand = /* @__PURE__ */ ((ReloadTexturesCommand2) => {
+  ReloadTexturesCommand2[ReloadTexturesCommand2["All"] = 0] = "All";
+  ReloadTexturesCommand2[ReloadTexturesCommand2["CarIndex"] = 1] = "CarIndex";
+  return ReloadTexturesCommand2;
+})(ReloadTexturesCommand || {});
+var SIM_STATUS_URI = "http://127.0.0.1:32034/get_sim_status?object=simStatus";
+var getSimStatus = () => new Promise((resolve, reject) => {
+  const req = http.get(SIM_STATUS_URI, (res) => {
+    let data = "";
+    res.on("data", (d) => {
+      data += d;
     });
-  }).on("error", (d) => {
-    r(d);
+    res.on("end", () => {
+      if (typeof data !== "string") {
+        reject(new Error("Invalid payload from sim received"));
+      }
+      resolve(data.includes("running:1"));
+    });
+  });
+  req.on("error", (err) => {
+    reject(err);
   });
 });
-function Za(n, r, i) {
-  if (i[r] = { ...n }, n.varType === 1) {
-    i[r].value = [], new Int8Array(n.value).forEach((t, u) => {
-      i[r].value[u] = !!t;
+function copyTelemData(src, key, dest) {
+  dest[key] = { ...src };
+  if (src.varType === 1) {
+    dest[key].value = [];
+    const arr = new Int8Array(src.value);
+    arr.forEach((val, i) => {
+      dest[key].value[i] = !!val;
     });
     return;
   }
-  n.varType === 2 || n.varType === 3 ? i[r].value = [...new Int32Array(n.value)] : n.varType === 4 ? i[r].value = [...new Float32Array(n.value)] : n.varType === 5 && (i[r].value = [...new Float64Array(n.value)]);
+  if (src.varType === 2 || src.varType === 3) {
+    dest[key].value = [...new Int32Array(src.value)];
+  } else if (src.varType === 4) {
+    dest[key].value = [...new Float32Array(src.value)];
+  } else if (src.varType === 5) {
+    dest[key].value = [...new Float64Array(src.value)];
+  }
 }
-var Te = {
-  logLevel: Ae.None,
-  autoEnableTelemetry: !1,
-  useTelemVariableCache: !0
-}, er = class Nr {
-  constructor(r) {
+var DefaultConfig = {
+  logLevel: LogLevel.None,
+  autoEnableTelemetry: false,
+  useTelemVariableCache: true
+};
+var IRacingSDK = class _IRacingSDK {
+  constructor(config) {
     // Public
     /**
      * Enable attempting to auto-start telemetry when starting the SDK (if it is not running).
      * @default false
      */
-    K(this, "autoEnableTelemetry", Te.autoEnableTelemetry);
+    __publicField(this, "autoEnableTelemetry", DefaultConfig.autoEnableTelemetry);
     /**
      * The logging level to use when calling irsdk-node API's. Defaults to 0 (LogLevel.None).
      * @default 0
      */
-    K(this, "logLevel", Te.logLevel);
+    __publicField(this, "logLevel", DefaultConfig.logLevel);
     /**
      * Whether or not to use an internal look-up cache when fetching Telemetry Variables by
      * name. This can provide a performance benefit, but may produce unwanted behaviour when
@@ -11433,19 +12969,25 @@ var Te = {
      *
      * @default true
      */
-    K(this, "useTelemVariableCache", Te.useTelemVariableCache);
+    __publicField(this, "useTelemVariableCache", DefaultConfig.useTelemVariableCache);
     // Private
-    K(this, "_dataVer", -1);
-    K(this, "_sessionData", null);
-    K(this, "_sdk");
-    K(this, "_resolvedConfig");
-    K(this, "_variableIndexCache", {});
+    __publicField(this, "_dataVer", -1);
+    __publicField(this, "_sessionData", null);
+    __publicField(this, "_sdk");
+    __publicField(this, "_resolvedConfig");
+    __publicField(this, "_variableIndexCache", {});
     this._resolvedConfig = {
-      ...Te,
-      ...r ?? {}
+      ...DefaultConfig,
+      ...config ?? {}
     };
-    const i = this._resolvedConfig.logLevel ?? Te.logLevel, d = this._resolvedConfig.autoEnableTelemetry ?? Te.autoEnableTelemetry, t = this._resolvedConfig.useTelemVariableCache ?? Te.useTelemVariableCache;
-    this._sdk = new ui(), this._sdk.logLevel = i, this.autoEnableTelemetry = d, this.useTelemVariableCache = t, Nr.IsSimRunning();
+    const loggingLevel = this._resolvedConfig.logLevel ?? DefaultConfig.logLevel;
+    const autoEnableTelemetry = this._resolvedConfig.autoEnableTelemetry ?? DefaultConfig.autoEnableTelemetry;
+    const useTelemVariableCache = this._resolvedConfig.useTelemVariableCache ?? DefaultConfig.useTelemVariableCache;
+    this._sdk = new NativeSDK();
+    this._sdk.logLevel = loggingLevel;
+    this.autoEnableTelemetry = autoEnableTelemetry;
+    this.useTelemVariableCache = useTelemVariableCache;
+    void _IRacingSDK.IsSimRunning();
   }
   /**
    * Gets the cached variable index from the internal cache, if it exists, otherwise
@@ -11454,19 +12996,24 @@ var Te = {
    * @param varName The variable to grab from the cache.
    * @returns The index of the variable in the variable list.
    */
-  _fetchVariableIndexFromCache(r) {
-    const i = this._variableIndexCache[r];
-    if (typeof i == "number")
-      return i;
-    const d = this._sdk.getTelemetryVariableIndex(r);
-    return d === null ? null : (this._variableIndexCache[r] = d, d);
+  _fetchVariableIndexFromCache(varName) {
+    const cachedIndex = this._variableIndexCache[varName];
+    if (typeof cachedIndex === "number") {
+      return cachedIndex;
+    }
+    const currentIndex = this._sdk.getTelemetryVariableIndex(varName);
+    if (currentIndex === null) {
+      return null;
+    }
+    this._variableIndexCache[varName] = currentIndex;
+    return currentIndex;
   }
   /**
    * Wait for the SDK module to resolve and load.
    * @deprecated This is no longer needed as of v4.0.3. Please remove.
    */
   async ready() {
-    return Promise.resolve(!0);
+    return Promise.resolve(true);
   }
   /**
    * The current version number of the session data. Increments internally every time data changes.
@@ -11480,10 +13027,10 @@ var Te = {
    * @property {boolean}
    */
   get enableLogging() {
-    return this._sdk.logLevel !== Ae.None;
+    return this._sdk.logLevel !== LogLevel.None;
   }
-  set enableLogging(r) {
-    this._sdk.logLevel = r ? Ae.Error : Ae.None;
+  set enableLogging(value) {
+    this._sdk.logLevel = value ? LogLevel.Error : LogLevel.None;
   }
   // @todo: add getter for current session string version
   /**
@@ -11492,11 +13039,12 @@ var Te = {
    */
   static async IsSimRunning() {
     try {
-      return await Ci();
-    } catch (r) {
-      La("Could not successfully determine sim status:", r);
+      const result = await getSimStatus();
+      return result;
+    } catch (e) {
+      error("Could not successfully determine sim status:", e);
     }
-    return !1;
+    return false;
   }
   get sessionStatusOK() {
     return this._sdk.isRunning();
@@ -11506,25 +13054,35 @@ var Te = {
    * @returns {boolean} If the SDK started successfully.
    */
   startSDK() {
-    if (this.resetTelemetryVariableCache(), !this._sdk.isRunning()) {
-      const r = this._sdk.startSDK();
-      return this.autoEnableTelemetry && this.enableTelemetry(!0), r;
+    this.resetTelemetryVariableCache();
+    if (!this._sdk.isRunning()) {
+      const successful = this._sdk.startSDK();
+      if (this.autoEnableTelemetry) {
+        this.enableTelemetry(true);
+      }
+      return successful;
     }
-    return !0;
+    return true;
   }
   /**
    * Stops the SDK from running and resets the data version.
    */
   stopSDK() {
-    this._sdk.stopSDK(), this._dataVer = -1, this.resetTelemetryVariableCache();
+    this._sdk.stopSDK();
+    this._dataVer = -1;
+    this.resetTelemetryVariableCache();
   }
   /**
    * Wait for new data from the sdk.
    * @param {number} timeout Timeout (in ms). Max is 60fps (1/60)
    */
-  waitForData(r) {
-    const i = this._sdk.waitForData(r);
-    return !i && this._sdk.currDataVersion === -1 && (this._dataVer = -1, this._sessionData = null), i;
+  waitForData(timeout) {
+    const result = this._sdk.waitForData(timeout);
+    if (!result && this._sdk.currDataVersion === -1) {
+      this._dataVer = -1;
+      this._sessionData = null;
+    }
+    return result;
   }
   /**
    * Gets the current session data (from yaml format).
@@ -11534,10 +13092,11 @@ var Te = {
     if (this._sessionData && this._dataVer === this.currDataVersion)
       return this._sessionData;
     try {
-      const r = this._sdk.getSessionData();
-      return this._sessionData = Jr(r.replaceAll(": ,", ": 0,")), this._sessionData;
-    } catch (r) {
-      La("There was an error getting session data:", r);
+      const seshString = this._sdk.getSessionData();
+      this._sessionData = load(seshString.replaceAll(": ,", ": 0,"));
+      return this._sessionData;
+    } catch (err) {
+      error("There was an error getting session data:", err);
     }
     return null;
   }
@@ -11558,56 +13117,56 @@ var Te = {
    * @returns {WeekendInfo}
    */
   getWeekendInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.WeekendInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.WeekendInfo) ?? null;
   }
   /**
    * Gets the current session info from the session data.
    * @returns {SessionInfo}
    */
   getSessionInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.SessionInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.SessionInfo) ?? null;
   }
   /**
    * Gets the current camera info from the session data.
    * @returns {CameraInfo}
    */
   getCameraInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.CameraInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.CameraInfo) ?? null;
   }
   /**
    * Gets the current radio info from the session data.
    * @returns {RadioInfo}
    */
   getRadioInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.RadioInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.RadioInfo) ?? null;
   }
   /**
    * Gets the current driver info from the session data.
    * @returns {DriverInfo}
    */
   getDriverInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.DriverInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.DriverInfo) ?? null;
   }
   /**
    * Gets the current split time info from the session data.
    * @returns {SplitTimeInfo}
    */
   getSplitInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.SplitTimeInfo) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.SplitTimeInfo) ?? null;
   }
   /**
    * Gets the current session info from the session data.
    * @returns {CarSetupInfo}
    */
   getCarSetupInfo() {
-    const r = this.getSessionData();
-    return (r == null ? void 0 : r.CarSetup) ?? null;
+    const session = this.getSessionData();
+    return (session == null ? void 0 : session.CarSetup) ?? null;
   }
   /**
    * Get the current value of the telemetry variables.
@@ -11617,33 +13176,40 @@ var Te = {
    * re-requesting it via this function.
    */
   getTelemetry() {
-    const r = this._sdk.getTelemetryData(), i = {};
-    return Object.keys(r).length > 0 && Object.keys(r).forEach((d) => {
-      Za(
-        r[d],
-        d,
-        i
-      );
-    }), i;
-  }
-  getTelemetryVariable(r) {
-    let i = r;
-    if (this.useTelemVariableCache && typeof r == "string") {
-      const u = this._fetchVariableIndexFromCache(r);
-      if (u === null)
-        return null;
-      i = u;
+    const rawData = this._sdk.getTelemetryData();
+    const data = {};
+    if (Object.keys(rawData).length > 0) {
+      Object.keys(rawData).forEach((dataKey) => {
+        copyTelemData(
+          rawData[dataKey],
+          dataKey,
+          data
+        );
+      });
     }
-    const d = this._sdk.getTelemetryVariable(i);
-    if (!d)
+    return data;
+  }
+  getTelemetryVariable(telemVar) {
+    let resolvedTelemVar = telemVar;
+    if (this.useTelemVariableCache && typeof telemVar === "string") {
+      const cachedIndex = this._fetchVariableIndexFromCache(telemVar);
+      if (cachedIndex === null) {
+        return null;
+      }
+      resolvedTelemVar = cachedIndex;
+    }
+    const rawData = this._sdk.getTelemetryVariable(resolvedTelemVar);
+    if (!rawData) {
       return null;
-    const t = {};
-    return Za(
-      d,
+    }
+    const parsed = {};
+    copyTelemData(
+      rawData,
       // eslint-disable-line
-      d.name,
-      t
-    ), t[d.name];
+      rawData.name,
+      parsed
+    );
+    return parsed[rawData.name];
   }
   /**
    * Resets the internal telemetry variable lookup cache. This occurs automatically
@@ -11662,72 +13228,72 @@ var Te = {
     this._variableIndexCache = {};
   }
   // Broadcast commands
-  enableTelemetry(r) {
-    const i = r ? je.Start : je.Stop;
-    this._sdk.broadcast(B.TelemCommand, i);
+  enableTelemetry(enabled) {
+    const command = enabled ? TelemetryCommand.Start : TelemetryCommand.Stop;
+    this._sdk.broadcast(BroadcastMessages.TelemCommand, command);
   }
   restartTelemetry() {
-    this._sdk.broadcast(B.TelemCommand, je.Restart);
+    this._sdk.broadcast(BroadcastMessages.TelemCommand, TelemetryCommand.Restart);
   }
-  changeCameraPosition(r, i, d) {
-    this._sdk.broadcast(B.CameraSwitchPos, r, i, d);
+  changeCameraPosition(position, group, camera) {
+    this._sdk.broadcast(BroadcastMessages.CameraSwitchPos, position, group, camera);
   }
   // @todo: needs to be padded
-  changeCameraNumber(r, i, d) {
-    this._sdk.broadcast(B.CameraSwitchNum, r, i, d);
+  changeCameraNumber(driver, group, camera) {
+    this._sdk.broadcast(BroadcastMessages.CameraSwitchNum, driver, group, camera);
   }
-  changeCameraState(r) {
-    this._sdk.broadcast(B.CameraSetState, r);
+  changeCameraState(state) {
+    this._sdk.broadcast(BroadcastMessages.CameraSetState, state);
   }
-  changeReplaySpeed(r, i) {
-    this._sdk.broadcast(B.ReplaySetPlaySpeed, r, i ? 1 : 0);
+  changeReplaySpeed(speed, slowMotion) {
+    this._sdk.broadcast(BroadcastMessages.ReplaySetPlaySpeed, speed, slowMotion ? 1 : 0);
   }
-  changeReplayPosition(r, i) {
-    this._sdk.broadcast(B.ReplaySetPlayPosition, r, i);
+  changeReplayPosition(position, frame) {
+    this._sdk.broadcast(BroadcastMessages.ReplaySetPlayPosition, position, frame);
   }
-  searchReplay(r) {
-    this._sdk.broadcast(B.ReplaySearch, r);
+  searchReplay(command) {
+    this._sdk.broadcast(BroadcastMessages.ReplaySearch, command);
   }
-  changeReplayState(r) {
-    this._sdk.broadcast(B.ReplaySetState, r);
+  changeReplayState(state) {
+    this._sdk.broadcast(BroadcastMessages.ReplaySetState, state);
   }
-  triggerReplaySessionSearch(r, i) {
-    this._sdk.broadcast(B.ReplaySearchSessionTime, r, i);
+  triggerReplaySessionSearch(session, time) {
+    this._sdk.broadcast(BroadcastMessages.ReplaySearchSessionTime, session, time);
   }
   reloadAllTextures() {
-    this._sdk.broadcast(B.ReloadTextures, Da.All, 0);
+    this._sdk.broadcast(BroadcastMessages.ReloadTextures, ReloadTexturesCommand.All, 0);
   }
-  reloadCarTextures(r) {
+  reloadCarTextures(car) {
     this._sdk.broadcast(
-      B.ReloadTextures,
-      Da.CarIndex,
-      r
+      BroadcastMessages.ReloadTextures,
+      ReloadTexturesCommand.CarIndex,
+      car
     );
   }
-  triggerChatState(r) {
-    this._sdk.broadcast(B.ChatCommand, r);
+  triggerChatState(state) {
+    this._sdk.broadcast(BroadcastMessages.ChatCommand, state);
   }
   /**
    * @param {number} macro Between 1 - 15
    */
-  triggerChatMacro(r) {
-    const i = Math.min(15, Math.max(1, r));
-    this._sdk.broadcast(B.ChatCommand, Dr.Macro, i);
+  triggerChatMacro(macro) {
+    const clamped = Math.min(15, Math.max(1, macro));
+    this._sdk.broadcast(BroadcastMessages.ChatCommand, ChatCommand.Macro, clamped);
   }
-  triggerPitClearCommand(r) {
-    this._sdk.broadcast(B.PitCommand, r, 0);
+  triggerPitClearCommand(command) {
+    this._sdk.broadcast(BroadcastMessages.PitCommand, command, 0);
   }
-  triggerPitCommand(r) {
-    this._sdk.broadcast(B.PitCommand, r, 0);
+  triggerPitCommand(command) {
+    this._sdk.broadcast(BroadcastMessages.PitCommand, command, 0);
   }
-  triggerPitChange(r, i) {
-    this._sdk.broadcast(B.PitCommand, r, i);
+  triggerPitChange(command, amount) {
+    this._sdk.broadcast(BroadcastMessages.PitCommand, command, amount);
   }
-  changeFFB(r, i) {
-    this._sdk.broadcast(B.FFBCommand, r, i);
+  changeFFB(mode, amount) {
+    this._sdk.broadcast(BroadcastMessages.FFBCommand, mode, amount);
   }
-  triggerVideoCapture(r) {
-    this._sdk.broadcast(B.VideoCapture, r);
+  triggerVideoCapture(command) {
+    this._sdk.broadcast(BroadcastMessages.VideoCapture, command);
   }
   /**
    * Trigger a broadcast manually, without any safety guard rails. Only use if
@@ -11740,18 +13306,21 @@ var Te = {
    * @param {BroadcastMessages} message The Broadcast Message type.
    * @param args Args for the message. Can be up to 3 numbers.
    */
-  broadcastUnsafe(r, ...i) {
-    return this._sdk.broadcast(r, ...i);
+  broadcastUnsafe(message, ...args) {
+    return this._sdk.broadcast(message, ...args);
   }
 };
-class mi {
-  constructor(r) {
-    this.ipcSender = r, this.isRunning = !1, this.sessionTime = 0;
+class MockTelemetryService {
+  constructor(ipcSender) {
+    this.ipcSender = ipcSender;
+    this.isRunning = false;
+    this.sessionTime = 0;
   }
   start() {
     if (this.isRunning) return;
-    this.isRunning = !0, console.log("Mock Telemetry started");
-    const r = {
+    this.isRunning = true;
+    console.log("Mock Telemetry started");
+    const sessionData = {
       data: {
         WeekendInfo: {
           TrackLength: "4.00 km"
@@ -11769,227 +13338,304 @@ class mi {
           ]
         }
       }
-    }, i = () => {
+    };
+    const loop = () => {
       if (!this.isRunning) return;
-      this.sessionTime += 0.033, this.tickCount = (this.tickCount || 0) + 1, this.tickCount % 30 === 0 && this.ipcSender("session-info", r);
-      const d = Math.max(0, Math.sin(this.sessionTime * 2)), t = Math.max(0, -Math.sin(this.sessionTime * 2)), u = Math.sin(this.sessionTime) * 1.5, p = Math.floor(Math.abs(Math.sin(this.sessionTime * 0.5) * 6)) + 1, m = 3e3 + d * 4e3, N = p * 30 + d * 20, o = Math.max(0, 50 - this.sessionTime * 0.05), c = Math.abs(this.sessionTime * 0.01 % 1), D = Math.abs((c + Math.sin(this.sessionTime * 0.2) * 5e-3) % 1), A = Math.abs((c + Math.cos(this.sessionTime * 0.15) * 8e-3) % 1), k = (c + 0.15) % 1, j = (c + 0.5) % 1, _ = (c + 0.85) % 1, q = (c + 0.05) % 1;
-      let G = D - c;
-      G > 0.5 && (G -= 1), G < -0.5 && (G += 1);
-      let H = A - c;
-      H > 0.5 && (H -= 1), H < -0.5 && (H += 1);
-      let W = 1;
-      Math.abs(G * 4e3) < 5 ? W = 2 : Math.abs(H * 4e3) < 5 && (W = 3);
-      const X = 22.5 + Math.sin(this.sessionTime * 0.05) * 0.5, $ = 35.2 + Math.cos(this.sessionTime * 0.02) * 1.5, pe = 2.5 + Math.sin(this.sessionTime * 0.1) * 1, le = this.sessionTime * 0.05 % (Math.PI * 2), oe = this.sessionTime * 0.3 % (Math.PI * 2), ee = this.sessionTime % 15 < 7.5, E = {
+      this.sessionTime += 0.033;
+      this.tickCount = (this.tickCount || 0) + 1;
+      if (this.tickCount % 30 === 0) {
+        this.ipcSender("session-info", sessionData);
+      }
+      const throttle = Math.max(0, Math.sin(this.sessionTime * 2));
+      const brake = Math.max(0, -Math.sin(this.sessionTime * 2));
+      const steering = Math.sin(this.sessionTime) * 1.5;
+      const gear = Math.floor(Math.abs(Math.sin(this.sessionTime * 0.5) * 6)) + 1;
+      const rpm = 3e3 + throttle * 4e3;
+      const speed = gear * 30 + throttle * 20;
+      const fuelLevel = Math.max(0, 50 - this.sessionTime * 0.05);
+      const playerDist = Math.abs(this.sessionTime * 0.01 % 1);
+      const car0Dist = Math.abs((playerDist + Math.sin(this.sessionTime * 0.2) * 5e-3) % 1);
+      const car2Dist = Math.abs((playerDist + Math.cos(this.sessionTime * 0.15) * 8e-3) % 1);
+      const car3Dist = (playerDist + 0.15) % 1;
+      const car4Dist = (playerDist + 0.5) % 1;
+      const car5Dist = (playerDist + 0.85) % 1;
+      const car6Dist = (playerDist + 0.05) % 1;
+      let delta0 = car0Dist - playerDist;
+      if (delta0 > 0.5) delta0 -= 1;
+      if (delta0 < -0.5) delta0 += 1;
+      let delta2 = car2Dist - playerDist;
+      if (delta2 > 0.5) delta2 -= 1;
+      if (delta2 < -0.5) delta2 += 1;
+      let leftRight = 1;
+      if (Math.abs(delta0 * 4e3) < 5) leftRight = 2;
+      else if (Math.abs(delta2 * 4e3) < 5) leftRight = 3;
+      const airTemp = 22.5 + Math.sin(this.sessionTime * 0.05) * 0.5;
+      const trackTemp = 35.2 + Math.cos(this.sessionTime * 0.02) * 1.5;
+      const windVel = 2.5 + Math.sin(this.sessionTime * 0.1) * 1;
+      const windDir = this.sessionTime * 0.05 % (Math.PI * 2);
+      const yaw = this.sessionTime * 0.3 % (Math.PI * 2);
+      const isPlayerOnPit = this.sessionTime % 15 < 7.5;
+      const pitSvFlags = 31;
+      const pitSvFuel = 25.5;
+      const telemetry = {
         values: {
           SessionTime: this.sessionTime,
-          AirTemp: X,
-          TrackTemp: $,
-          WindVel: Math.max(0, pe),
-          WindDir: le,
-          Yaw: oe,
-          FuelLevel: o,
+          AirTemp: airTemp,
+          TrackTemp: trackTemp,
+          WindVel: Math.max(0, windVel),
+          WindDir: windDir,
+          Yaw: yaw,
+          FuelLevel: fuelLevel,
           FuelUsePerHour: 15.5,
-          SteeringWheelAngle: u,
-          Throttle: d,
-          Brake: t,
+          SteeringWheelAngle: steering,
+          Throttle: throttle,
+          Brake: brake,
           Clutch: 0,
-          Gear: p,
-          RPM: m,
-          ShiftIndicatorPct: (m - 3e3) / 4e3,
+          Gear: gear,
+          RPM: rpm,
+          ShiftIndicatorPct: (rpm - 3e3) / 4e3,
           // mock: 3000 is 0, 7000 is 1.0
-          Speed: N,
-          PitSvFlags: 31,
-          PitSvFuel: 25.5,
+          Speed: speed,
+          PitSvFlags: pitSvFlags,
+          PitSvFuel: pitSvFuel,
           // Added 7 cars total
           CarIdxPosition: [6, 3, 5, 2, 7, 4, 1],
           CarIdxClassPosition: [6, 3, 5, 2, 7, 4, 1],
           CarIdxLap: [9, 10, 11, 10, 8, 10, 10],
-          CarIdxLapDistPct: [D, c, A, k, j, _, q],
-          CarLeftRight: W,
-          CarIdxOnPitRoad: [!1, ee, !0, !1, !1, !1, !1],
-          CarIdxHasDamage: [!0, !1, !1, !1, !0, !1, !1],
-          CarIdxIsFastestLap: [!1, !1, !1, !1, !1, !1, !0],
+          CarIdxLapDistPct: [car0Dist, playerDist, car2Dist, car3Dist, car4Dist, car5Dist, car6Dist],
+          CarLeftRight: leftRight,
+          CarIdxOnPitRoad: [false, isPlayerOnPit, true, false, false, false, false],
+          CarIdxHasDamage: [true, false, false, false, true, false, false],
+          CarIdxIsFastestLap: [false, false, false, false, false, false, true],
           CarIdxBestLapTime: [75.2, 72.1, 74.5, 71.8, 80, 73, 71.5],
           CarIdxLastLapTime: [76.1, 72.3, 75, 72, 81.2, 73.5, 71.8],
           CarIdxF2Time: [12.5, 0, 4.2, -1.5, 45, 2.1, -15]
         }
-      }, w = this.filterTelemetry(E);
-      this.ipcSender("telemetry-update", w), setTimeout(i, 33);
+      };
+      const payload = this.filterTelemetry(telemetry);
+      this.ipcSender("telemetry-update", payload);
+      setTimeout(loop, 33);
     };
-    i();
+    loop();
   }
   stop() {
-    this.isRunning = !1;
+    this.isRunning = false;
   }
-  filterTelemetry(r) {
-    const i = (r == null ? void 0 : r.values) || r || {}, d = {};
-    for (let t = 0; t < 64; t++)
-      i.CarIdxPosition && i.CarIdxPosition[t] > 0 && (d[t] = {
-        Position: i.CarIdxPosition[t],
-        ClassPosition: i.CarIdxClassPosition ? i.CarIdxClassPosition[t] : 0,
-        LapDistPct: i.CarIdxLapDistPct ? i.CarIdxLapDistPct[t] : 0,
-        Lap: i.CarIdxLap ? i.CarIdxLap[t] : 0,
-        LastLapTime: i.CarIdxLastLapTime ? i.CarIdxLastLapTime[t] : -1,
-        BestLapTime: i.CarIdxBestLapTime ? i.CarIdxBestLapTime[t] : -1,
-        F2Time: i.CarIdxF2Time ? i.CarIdxF2Time[t] : -1,
-        TrackSurface: i.CarIdxTrackSurface ? i.CarIdxTrackSurface[t] : 3,
-        OnPitRoad: i.CarIdxOnPitRoad ? i.CarIdxOnPitRoad[t] : !1,
-        HasDamage: i.CarIdxHasDamage ? i.CarIdxHasDamage[t] : !1,
-        IsFastestLap: i.CarIdxIsFastestLap ? i.CarIdxIsFastestLap[t] : !1
-      });
+  filterTelemetry(data) {
+    const values = (data == null ? void 0 : data.values) || data || {};
+    const grid = {};
+    for (let i = 0; i < 64; i++) {
+      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+        grid[i] = {
+          Position: values.CarIdxPosition[i],
+          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
+          F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
+          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false
+        };
+      }
+    }
     return {
-      SessionTime: i.SessionTime,
+      SessionTime: values.SessionTime,
       player_name: "Player",
       playerCarIdx: 1,
-      AirTemp: i.AirTemp || 0,
-      TrackTemp: i.TrackTemp || 0,
-      WindVel: i.WindVel || 0,
-      WindDir: i.WindDir || 0,
-      Yaw: i.Yaw || 0,
-      FuelLevel: i.FuelLevel || 0,
-      FuelUsePerHour: i.FuelUsePerHour || 0,
-      SteeringWheelAngle: i.SteeringWheelAngle || 0,
-      Throttle: i.Throttle || 0,
-      Brake: i.Brake || 0,
-      Clutch: i.Clutch || 0,
-      Gear: i.Gear || 0,
-      RPM: i.RPM || 0,
-      ShiftIndicatorPct: i.ShiftIndicatorPct || 0,
-      Speed: i.Speed || 0,
-      PitSvFlags: i.PitSvFlags || 0,
-      PitSvFuel: i.PitSvFuel || 0,
-      CarLeftRight: i.CarLeftRight || 0,
-      grid: d
+      AirTemp: values.AirTemp || 0,
+      TrackTemp: values.TrackTemp || 0,
+      WindVel: values.WindVel || 0,
+      WindDir: values.WindDir || 0,
+      Yaw: values.Yaw || 0,
+      FuelLevel: values.FuelLevel || 0,
+      FuelUsePerHour: values.FuelUsePerHour || 0,
+      SteeringWheelAngle: values.SteeringWheelAngle || 0,
+      Throttle: values.Throttle || 0,
+      Brake: values.Brake || 0,
+      Clutch: values.Clutch || 0,
+      Gear: values.Gear || 0,
+      RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
+      Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
+      CarLeftRight: values.CarLeftRight || 0,
+      grid
     };
   }
 }
-class fi {
-  constructor(r) {
-    this.ipcSender = r, this.iracing = new er(), this.isRunning = !1, this.mockService = null;
+class TelemetryService {
+  constructor(ipcSender) {
+    this.ipcSender = ipcSender;
+    this.iracing = new IRacingSDK();
+    this.isRunning = false;
+    this.mockService = null;
   }
   async start() {
     if (this.isRunning) return;
-    if (this.isRunning = !0, !await er.IsSimRunning() && (console.warn("iRacing is not running."), process.env.VITE_DEV_SERVER_URL)) {
-      console.log("Starting Mock Telemetry as fallback..."), this.mockService = new mi(this.ipcSender), this.mockService.start();
-      return;
+    this.isRunning = true;
+    const isRunning = await IRacingSDK.IsSimRunning();
+    if (!isRunning) {
+      console.warn("iRacing is not running.");
+      if (process.env.VITE_DEV_SERVER_URL) {
+        console.log("Starting Mock Telemetry as fallback...");
+        this.mockService = new MockTelemetryService(this.ipcSender);
+        this.mockService.start();
+        return;
+      }
     }
     this.iracing.startSDK();
-    const i = Math.floor(1 / 30 * 1e3), d = () => {
-      if (this.isRunning && !this.mockService) {
-        if (this.iracing.waitForData(i)) {
-          const t = this.iracing.getSessionData(), u = this.iracing.getTelemetry();
-          if (t && this.ipcSender("session-info", { data: t }), u) {
-            const p = this.filterTelemetry(u);
-            this.ipcSender("telemetry-update", p);
-          }
+    let lastSessionSend = 0;
+    const loop = () => {
+      if (!this.isRunning) return;
+      if (this.mockService) return;
+      if (this.iracing.waitForData(0)) {
+        const session = this.iracing.getSessionData();
+        const telemetry = this.iracing.getTelemetry();
+        const now = Date.now();
+        if (session && now - lastSessionSend > 1e3) {
+          this.ipcSender("session-info", { data: session });
+          lastSessionSend = now;
         }
-        setTimeout(d, 10);
+        if (telemetry) {
+          const payload = this.filterTelemetry(telemetry);
+          this.ipcSender("telemetry-update", payload);
+        }
       }
+      setTimeout(loop, 33);
     };
-    d();
+    loop();
   }
   stop() {
-    this.isRunning = !1, this.mockService ? (this.mockService.stop(), this.mockService = null) : this.iracing.stopSDK();
+    this.isRunning = false;
+    if (this.mockService) {
+      this.mockService.stop();
+      this.mockService = null;
+    } else {
+      this.iracing.stopSDK();
+    }
   }
-  filterTelemetry(r) {
-    var t, u, p, m, N, o, c, D, A, k, j;
-    const i = (r == null ? void 0 : r.values) || r || {}, d = {};
-    for (let _ = 0; _ < 64; _++)
-      i.CarIdxPosition && i.CarIdxPosition[_] > 0 && (d[_] = {
-        Position: i.CarIdxPosition[_],
-        ClassPosition: i.CarIdxClassPosition ? i.CarIdxClassPosition[_] : 0,
-        LapDistPct: i.CarIdxLapDistPct ? i.CarIdxLapDistPct[_] : 0,
-        Lap: i.CarIdxLap ? i.CarIdxLap[_] : 0,
-        LastLapTime: i.CarIdxLastLapTime ? i.CarIdxLastLapTime[_] : -1,
-        BestLapTime: i.CarIdxBestLapTime ? i.CarIdxBestLapTime[_] : -1,
-        F2Time: i.CarIdxF2Time ? i.CarIdxF2Time[_] : -1,
-        TrackSurface: i.CarIdxTrackSurface ? i.CarIdxTrackSurface[_] : 3,
-        OnPitRoad: i.CarIdxOnPitRoad ? i.CarIdxOnPitRoad[_] : !1,
-        HasDamage: i.CarIdxHasDamage ? i.CarIdxHasDamage[_] : !1,
-        IsFastestLap: i.CarIdxIsFastestLap ? i.CarIdxIsFastestLap[_] : !1
-      });
+  filterTelemetry(data) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    const values = (data == null ? void 0 : data.values) || data || {};
+    const grid = {};
+    for (let i = 0; i < 64; i++) {
+      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+        grid[i] = {
+          Position: values.CarIdxPosition[i],
+          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+          BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
+          F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
+          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false
+        };
+      }
+    }
     return {
-      SessionTime: i.SessionTime,
-      player_name: ((D = (c = (p = (u = (t = r == null ? void 0 : r.sessionInfo) == null ? void 0 : t.data) == null ? void 0 : u.DriverInfo) == null ? void 0 : p.Drivers) == null ? void 0 : c[(o = (N = (m = r == null ? void 0 : r.sessionInfo) == null ? void 0 : m.data) == null ? void 0 : N.DriverInfo) == null ? void 0 : o.DriverCarIdx]) == null ? void 0 : D.UserName) || "",
-      playerCarIdx: (j = (k = (A = r == null ? void 0 : r.sessionInfo) == null ? void 0 : A.data) == null ? void 0 : k.DriverInfo) == null ? void 0 : j.DriverCarIdx,
-      AirTemp: i.AirTemp || 0,
-      TrackTemp: i.TrackTemp || 0,
-      WindVel: i.WindVel || 0,
-      WindDir: i.WindDir || 0,
-      Yaw: i.Yaw || 0,
-      FuelLevel: i.FuelLevel || 0,
-      FuelUsePerHour: i.FuelUsePerHour || 0,
-      SteeringWheelAngle: i.SteeringWheelAngle || 0,
-      Throttle: i.Throttle || 0,
-      Brake: i.Brake || 0,
-      Clutch: i.Clutch || 0,
-      Gear: i.Gear || 0,
-      RPM: i.RPM || 0,
-      ShiftIndicatorPct: i.ShiftIndicatorPct || 0,
-      Speed: i.Speed || 0,
-      PitSvFlags: i.PitSvFlags || 0,
-      PitSvFuel: i.PitSvFuel || 0,
-      CarLeftRight: i.CarLeftRight || 0,
-      grid: d
+      SessionTime: values.SessionTime,
+      player_name: ((_h = (_g = (_c = (_b = (_a = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _a.data) == null ? void 0 : _b.DriverInfo) == null ? void 0 : _c.Drivers) == null ? void 0 : _g[(_f = (_e = (_d = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _d.data) == null ? void 0 : _e.DriverInfo) == null ? void 0 : _f.DriverCarIdx]) == null ? void 0 : _h.UserName) || "",
+      playerCarIdx: (_k = (_j = (_i = data == null ? void 0 : data.sessionInfo) == null ? void 0 : _i.data) == null ? void 0 : _j.DriverInfo) == null ? void 0 : _k.DriverCarIdx,
+      AirTemp: values.AirTemp || 0,
+      TrackTemp: values.TrackTemp || 0,
+      WindVel: values.WindVel || 0,
+      WindDir: values.WindDir || 0,
+      Yaw: values.Yaw || 0,
+      FuelLevel: values.FuelLevel || 0,
+      FuelUsePerHour: values.FuelUsePerHour || 0,
+      SteeringWheelAngle: values.SteeringWheelAngle || 0,
+      Throttle: values.Throttle || 0,
+      Brake: values.Brake || 0,
+      Clutch: values.Clutch || 0,
+      Gear: values.Gear || 0,
+      RPM: values.RPM || 0,
+      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
+      Speed: values.Speed || 0,
+      PitSvFlags: values.PitSvFlags || 0,
+      PitSvFuel: values.PitSvFuel || 0,
+      CarLeftRight: values.CarLeftRight || 0,
+      grid
     };
   }
 }
-class pi {
-  constructor(r) {
-    const i = xe.getPath("userData");
-    this.path = Ne.join(i, r.configName + ".json"), this.data = di(this.path, r.defaults);
+class Store {
+  constructor(opts) {
+    const userDataPath = app.getPath("userData");
+    this.path = path.join(userDataPath, opts.configName + ".json");
+    this.data = parseDataFile(this.path, opts.defaults);
   }
-  get(r) {
-    return this.data[r];
+  get(key) {
+    return this.data[key];
   }
-  set(r, i) {
-    this.data[r] = i, qe.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+  set(key, val) {
+    this.data[key] = val;
+    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
   }
-  setAll(r) {
-    this.data = { ...this.data, ...r }, qe.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+  setAll(newVal) {
+    this.data = { ...this.data, ...newVal };
+    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
   }
   getAll() {
     return this.data;
   }
 }
-function di(n, r) {
+function parseDataFile(filePath, defaults) {
   try {
-    return JSON.parse(qe.readFileSync(n));
-  } catch {
-    return r;
+    return JSON.parse(fs.readFileSync(filePath));
+  } catch (error2) {
+    return defaults;
   }
 }
-let De;
-xe.whenReady().then(() => {
-  const n = new pi({
+let windowManager;
+app.whenReady().then(() => {
+  const store = new Store({
     configName: "user-preferences",
     defaults: {
       overlays: {
         standings: {
-          enabled: !1,
+          enabled: false,
           x: 100,
           y: 100,
           width: 400,
           height: 600,
-          clickThrough: !1,
-          columns: { pos: !0, num: !0, driver: !0, carName: !1, carClass: !0, classPos: !0, srating: !0, irating: !0, gap: !0, bestLap: !1, lastLap: !0, trackPct: !1, laps: !1 }
+          clickThrough: false,
+          columns: { pos: true, num: true, driver: true, carName: false, carClass: true, classPos: true, srating: true, irating: true, gap: true, bestLap: false, lastLap: true, trackPct: false, laps: false }
         },
-        relative: { enabled: !1, x: 500, y: 100, width: 400, height: 600, clickThrough: !1 },
-        fuel: { enabled: !1, x: 100, y: 750, width: 250, height: 150, clickThrough: !1 },
-        inputs: { enabled: !1, x: 400, y: 750, width: 300, height: 150, clickThrough: !1 }
+        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false },
+        fuel: { enabled: false, x: 100, y: 750, width: 250, height: 150, clickThrough: false },
+        inputs: { enabled: false, x: 400, y: 750, width: 300, height: 150, clickThrough: false }
       }
     }
   });
-  De = new Or(n), De.createDashboard();
-  const r = n.get("overlays") || {};
-  Object.keys(r).forEach((d) => {
-    r[d].enabled && De.createOverlay(d, r[d]);
-  }), new fi((d, t) => {
-    De && De.broadcast(d, t);
-  }).start(), xe.on("activate", () => {
-    va.getAllWindows().length === 0 && De.createDashboard();
+  windowManager = new WindowManager(store);
+  windowManager.createDashboard();
+  const overlays = store.get("overlays") || {};
+  Object.keys(overlays).forEach((id) => {
+    if (overlays[id].enabled) {
+      windowManager.createOverlay(id, overlays[id]);
+    }
+  });
+  const telemetry = new TelemetryService((channel, data) => {
+    if (windowManager) {
+      windowManager.broadcast(channel, data);
+    }
+  });
+  telemetry.start();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      windowManager.createDashboard();
+    }
   });
 });
-xe.on("window-all-closed", () => {
-  process.platform !== "darwin" && xe.quit();
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
 });

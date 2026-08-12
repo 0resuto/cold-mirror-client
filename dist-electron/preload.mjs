@@ -1,1 +1,31 @@
-"use strict";const{contextBridge:o,ipcRenderer:t}=require("electron");o.exposeInMainWorld("electronAPI",{setIgnoreMouseEvents:(e,n)=>t.send("set-ignore-mouse-events",e,n),onTelemetryUpdate:e=>t.on("telemetry-update",(n,s)=>e(s)),onSessionInfo:e=>t.on("session-info",(n,s)=>e(s)),removeTelemetryListeners:()=>{t.removeAllListeners("telemetry-update"),t.removeAllListeners("session-info")},windowAction:(e,n,s)=>t.send("window-action",{windowId:e,action:n,payload:s}),onMaximizeStateChange:e=>t.on("maximize-state",(n,s)=>e(s)),getSettings:()=>t.invoke("get-settings"),updateOverlaySetting:(e,n)=>t.send("update-overlay-setting",{id:e,settings:n}),toggleOverlay:(e,n)=>t.send("toggle-overlay",e,n),onSettingsUpdated:e=>t.on("settings-updated",(n,s)=>e(s)),removeSettingsListeners:()=>t.removeAllListeners("settings-updated")});
+"use strict";
+const electron = require("electron");
+electron.contextBridge.exposeInMainWorld("electronAPI", {
+  setIgnoreMouseEvents: (ignore, options) => electron.ipcRenderer.send("set-ignore-mouse-events", ignore, options),
+  onTelemetryUpdate: (callback) => {
+    const handler = (_event, value) => callback(value);
+    electron.ipcRenderer.on("telemetry-update", handler);
+    return () => electron.ipcRenderer.removeListener("telemetry-update", handler);
+  },
+  onSessionInfo: (callback) => {
+    const handler = (_event, value) => callback(value);
+    electron.ipcRenderer.on("session-info", handler);
+    return () => electron.ipcRenderer.removeListener("session-info", handler);
+  },
+  // Window management
+  windowAction: (windowId, action, payload) => electron.ipcRenderer.send("window-action", { windowId, action, payload }),
+  onMaximizeStateChange: (callback) => {
+    const handler = (_event, value) => callback(value);
+    electron.ipcRenderer.on("maximize-state", handler);
+    return () => electron.ipcRenderer.removeListener("maximize-state", handler);
+  },
+  // Settings & App State
+  getSettings: () => electron.ipcRenderer.invoke("get-settings"),
+  updateOverlaySetting: (id, settings) => electron.ipcRenderer.send("update-overlay-setting", { id, settings }),
+  toggleOverlay: (id, state) => electron.ipcRenderer.send("toggle-overlay", id, state),
+  onSettingsUpdated: (callback) => {
+    const handler = (_event, value) => callback(value);
+    electron.ipcRenderer.on("settings-updated", handler);
+    return () => electron.ipcRenderer.removeListener("settings-updated", handler);
+  }
+});

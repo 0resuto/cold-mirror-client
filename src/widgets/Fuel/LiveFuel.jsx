@@ -15,7 +15,7 @@ export function LiveFuel() {
       if (now - lastUpdateTime < 200) return;
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
 
       useAppStore.getState().setWidgetActive('fuel', latestData.Speed > 1);

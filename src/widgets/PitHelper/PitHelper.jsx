@@ -25,7 +25,7 @@ export function PitHelper() {
       if (now - lastUpdateTime < 33) return; // ~30fps
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
 
       const session = state.sessionData;

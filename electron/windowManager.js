@@ -9,6 +9,7 @@ export class WindowManager {
   constructor(store) {
     this.windows = new Map();
     this.store = store;
+    this.boundsTimeout = new Map();
     this.setupIpc();
   }
 
@@ -49,16 +50,7 @@ export class WindowManager {
           break;
         case 'resize':
           win.setSize(payload.width, payload.height);
-          // Save new bounds to store
-          if (windowId.startsWith('overlay-')) {
-            const id = windowId.replace('overlay-', '');
-            const overlays = this.store.get('overlays') || {};
-            if (overlays[id]) {
-              overlays[id].width = payload.width;
-              overlays[id].height = payload.height;
-              this.store.set('overlays', overlays);
-            }
-          }
+          this.saveBounds(windowId, win);
           break;
       }
     });
@@ -150,16 +142,25 @@ export class WindowManager {
   
   saveBounds(id, win) {
     if (!id.startsWith('overlay-')) return;
-    const overlayId = id.replace('overlay-', '');
-    const bounds = win.getBounds();
-    const overlays = this.store.get('overlays') || {};
-    if (overlays[overlayId]) {
-       overlays[overlayId].x = bounds.x;
-       overlays[overlayId].y = bounds.y;
-       overlays[overlayId].width = bounds.width;
-       overlays[overlayId].height = bounds.height;
-       this.store.set('overlays', overlays);
+    
+    if (this.boundsTimeout.has(id)) {
+      clearTimeout(this.boundsTimeout.get(id));
     }
+    
+    this.boundsTimeout.set(id, setTimeout(() => {
+      if (win.isDestroyed()) return;
+      
+      const overlayId = id.replace('overlay-', '');
+      const bounds = win.getBounds();
+      const overlays = this.store.get('overlays') || {};
+      if (overlays[overlayId]) {
+         overlays[overlayId].x = bounds.x;
+         overlays[overlayId].y = bounds.y;
+         overlays[overlayId].width = bounds.width;
+         overlays[overlayId].height = bounds.height;
+         this.store.set('overlays', overlays);
+      }
+    }, 300));
   }
 
   createDashboard() {

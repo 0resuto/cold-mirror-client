@@ -28,18 +28,21 @@ export class TelemetryService {
     
     this.iracing.startSDK();
     
-    const TIMEOUT = Math.floor((1 / 30) * 1000); // ~30fps for UI
+    let lastSessionSend = 0;
 
     const loop = () => {
         if (!this.isRunning) return;
         if (this.mockService) return; // Mock is running
         
-        if (this.iracing.waitForData(TIMEOUT)) {
+        // Use 0ms to prevent blocking the Node event loop
+        if (this.iracing.waitForData(0)) {
             const session = this.iracing.getSessionData();
             const telemetry = this.iracing.getTelemetry();
             
-            if (session) {
+            const now = Date.now();
+            if (session && (now - lastSessionSend > 1000)) {
                 this.ipcSender('session-info', { data: session });
+                lastSessionSend = now;
             }
             if (telemetry) {
                 const payload = this.filterTelemetry(telemetry);
@@ -47,8 +50,8 @@ export class TelemetryService {
             }
         }
         
-        // Loop again
-        setTimeout(loop, 10);
+        // Loop again asynchronously for ~30fps
+        setTimeout(loop, 33);
     };
     
     loop();

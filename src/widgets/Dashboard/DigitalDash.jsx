@@ -21,7 +21,7 @@ export function DigitalDash() {
       if (now - lastUpdateTime < 16) return; 
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
 
       useAppStore.getState().setWidgetActive('dash', latestData.Speed > 1);

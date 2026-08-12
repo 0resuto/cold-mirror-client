@@ -16,7 +16,7 @@ export function LinearTrackMap() {
       if (now - lastUpdateTime < 66) return; 
       lastUpdateTime = now;
       
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
       
       useAppStore.getState().setWidgetActive('trackmap', latestData.Speed > 1);

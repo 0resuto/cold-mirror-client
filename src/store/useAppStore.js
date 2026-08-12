@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+let unsubSettings = null;
+
 export const useAppStore = create((set, get) => ({
   overlays: {},
   settingsLoaded: false,
@@ -11,10 +13,8 @@ export const useAppStore = create((set, get) => ({
     set({ overlays: settings.overlays || {}, settingsLoaded: true });
 
     // Listen for changes from main process (e.g. window resize/move or toggles)
-    if (window.electronAPI.removeSettingsListeners) {
-      window.electronAPI.removeSettingsListeners();
-    }
-    window.electronAPI.onSettingsUpdated((newSettings) => {
+    if (unsubSettings) unsubSettings();
+    unsubSettings = window.electronAPI.onSettingsUpdated((newSettings) => {
       set({ overlays: newSettings.overlays || {} });
     });
   },

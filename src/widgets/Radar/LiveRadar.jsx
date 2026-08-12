@@ -18,7 +18,7 @@ export function LiveRadar() {
       if (now - lastUpdateTime < 33) return; // ~30Hz update rate
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
 
       const driverCarIdx = state.driverCarIdx;

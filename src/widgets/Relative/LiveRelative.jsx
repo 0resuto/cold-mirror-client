@@ -16,7 +16,7 @@ export function LiveRelative() {
       if (now - lastUpdateTime < 66) return;
       lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       const grid = latestData?.grid || {};
 
       useAppStore.getState().setWidgetActive('relative', latestData?.Speed > 1);

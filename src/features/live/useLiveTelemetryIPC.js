@@ -3,7 +3,7 @@ import { useLiveStore } from '../../store/useLiveStore';
 import toast from 'react-hot-toast';
 
 export function useLiveTelemetryIPC(enabled = true) {
-  const setLiveLapData = useLiveStore((state) => state.setLiveLapData);
+  const setLatestTelemetry = useLiveStore((state) => state.setLatestTelemetry);
   const setSessionDrivers = useLiveStore((state) => state.setSessionDrivers);
   const clearLiveData = useLiveStore((state) => state.clearLiveData);
   const [isConnected, setIsConnected] = useState(false);
@@ -18,11 +18,11 @@ export function useLiveTelemetryIPC(enabled = true) {
 
     setIsConnected(true);
 
-    window.electronAPI.onTelemetryUpdate((data) => {
-      setLiveLapData([data]); 
+    const unsubTelemetry = window.electronAPI.onTelemetryUpdate((data) => {
+      setLatestTelemetry(data); 
     });
 
-    window.electronAPI.onSessionInfo((sessionInfo) => {
+    const unsubSession = window.electronAPI.onSessionInfo((sessionInfo) => {
       if (sessionInfo?.data?.DriverInfo?.Drivers) {
          const drivers = sessionInfo.data.DriverInfo.Drivers;
          const driverCarIdx = sessionInfo.data.DriverInfo.DriverCarIdx;
@@ -32,11 +32,10 @@ export function useLiveTelemetryIPC(enabled = true) {
     });
 
     return () => {
-      if (window.electronAPI.removeTelemetryListeners) {
-        window.electronAPI.removeTelemetryListeners();
-      }
+      if (unsubTelemetry) unsubTelemetry();
+      if (unsubSession) unsubSession();
     };
-  }, [enabled, setLiveLapData, setSessionDrivers]);
+  }, [enabled, setLatestTelemetry, setSessionDrivers]);
 
   return { isConnected };
 }

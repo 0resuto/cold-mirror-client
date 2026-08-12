@@ -52,14 +52,19 @@ export const LiveStandings = () => {
   useEffect(() => {
     if (!window.electronAPI) return;
 
+    let lastUpdateTime = 0;
     const unsubscribe = useLiveStore.subscribe((state) => {
-      if (!state.liveLapData || state.liveLapData.length === 0) {
+      if (!state.latestTelemetry) {
         setStandings([]);
         useAppStore.getState().setWidgetActive('standings', false);
         return;
       }
+      
+      const now = Date.now();
+      if (now - lastUpdateTime < 250) return; // 4Hz throttle
+      lastUpdateTime = now;
 
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
       
       useAppStore.getState().setWidgetActive('standings', latestData.Speed > 1);

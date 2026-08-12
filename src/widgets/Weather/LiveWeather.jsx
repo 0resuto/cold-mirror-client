@@ -14,7 +14,7 @@ export function LiveWeather() {
       if (now - lastUpdateTime < 250) return; 
       lastUpdateTime = now;
       
-      const latestData = state.liveLapData[state.liveLapData.length - 1];
+      const latestData = state.latestTelemetry;
       if (!latestData) return;
       
       useAppStore.getState().setWidgetActive('weather', latestData.Speed > 1);
