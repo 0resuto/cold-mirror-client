@@ -45,7 +45,7 @@ export const useAppStore = create((set, get) => ({
       overlays: {
         ...state.overlays,
         [id]: {
-          ...(state.overlays[id] || {}),
+          ...state.overlays[id],
           ...settingObj
         }
       }
