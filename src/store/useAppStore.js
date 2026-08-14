@@ -2,6 +2,22 @@ import { create } from 'zustand';
 
 let unsubSettings = null;
 
+const debounceSettings = (() => {
+  let timer = null;
+  let pendingSettings = {};
+  
+  return (id, settingObj) => {
+    pendingSettings[id] = { ...pendingSettings[id], ...settingObj };
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      Object.entries(pendingSettings).forEach(([overlayId, settings]) => {
+        window.electronAPI.updateOverlaySetting(overlayId, settings);
+      });
+      pendingSettings = {};
+    }, 150);
+  };
+})();
+
 export const useAppStore = create((set, get) => ({
   overlays: {},
   settingsLoaded: false,
@@ -17,6 +33,7 @@ export const useAppStore = create((set, get) => ({
     unsubSettings = window.electronAPI.onSettingsUpdated((newSettings) => {
       set({ overlays: newSettings.overlays || {} });
     });
+    return unsubSettings;
   },
 
   widgetActive: {},
@@ -37,10 +54,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   updateOverlaySetting: (id, settingObj) => {
-    if (window.electronAPI) {
-      window.electronAPI.updateOverlaySetting(id, settingObj);
-    }
-    // Optimistic update
+    // Optimistic update first
     set((state) => ({
       overlays: {
         ...state.overlays,
@@ -50,6 +64,10 @@ export const useAppStore = create((set, get) => ({
         }
       }
     }));
+    // Debounced IPC send
+    if (window.electronAPI) {
+      debounceSettings(id, settingObj);
+    }
   },
 
 }));

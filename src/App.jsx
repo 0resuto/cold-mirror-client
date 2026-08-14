@@ -1,17 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { LiveStandings } from './widgets/Standings/LiveStandings';
-import { LiveRelative } from './widgets/Relative/LiveRelative';
-import { LiveFuel } from './widgets/Fuel/LiveFuel';
-import { LiveInputs } from './widgets/Inputs/LiveInputs';
-import { LiveRadar } from './widgets/Radar/LiveRadar';
-import { LinearTrackMap } from './widgets/TrackMap/LinearTrackMap';
-import { LiveWeather } from './widgets/Weather/LiveWeather';
-import { PitHelper } from './widgets/PitHelper/PitHelper';
-import { DigitalDash } from './widgets/Dashboard/DigitalDash';
+import { LiveStandings, LiveRelative, LiveFuel, LiveInputs, LiveRadar, LinearTrackMap, LiveWeather, PitHelper, DigitalDash, TelemetryProvider } from 'cold-mirror-widgets';
+import 'cold-mirror-widgets/style.css';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Power, Trophy, Settings, ChevronDown, ChevronUp, Lock, Unlock, Minus, Square, X } from 'lucide-react';
+import { useLiveStore } from './store/useLiveStore';
+import { Power, Settings, ChevronDown, ChevronUp, Lock, Unlock, Minus, Square, X } from 'lucide-react';
 import appIcon from './assets/app_icon.ico';
 
 const getSliderFill = (val, min, max) => {
@@ -55,7 +49,18 @@ function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetting }) {
     <div className="bg-brand-60/10 border border-brand-60/30 rounded-xl flex flex-col transition-colors hover:border-brand-60/50 overflow-hidden">
       {/* Header (Always Visible) */}
       <div className="p-4 flex items-center justify-between">
-        <div className="flex-1 cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
+        <div 
+          className="flex-1 cursor-pointer select-none" 
+          onClick={() => setIsExpanded(!isExpanded)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setIsExpanded(!isExpanded);
+            }
+          }}
+        >
           <h3 className="font-bold text-lg flex items-center gap-2">
             {config.name}
             {isExpanded ? <ChevronUp size={16} className="text-brand-60" /> : <ChevronDown size={16} className="text-brand-60" />}
@@ -228,24 +233,35 @@ function Dashboard() {
   );
 }
 
-function ResizeHandle({ windowId }) {
+const ResizeHandle = React.memo(function ResizeHandle({ windowId }) {
   const [isDragging, setIsDragging] = useState(false);
   const startPos = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const rafRef = useRef(null);
 
   useEffect(() => {
     if (!isDragging) return;
 
     const onMouseMove = (e) => {
-      const deltaX = e.screenX - startPos.current.x;
-      const deltaY = e.screenY - startPos.current.y;
-      
-      const newWidth = Math.max(100, startPos.current.w + deltaX);
-      const newHeight = Math.max(100, startPos.current.h + deltaY);
-      
-      window.electronAPI.windowAction(windowId, 'resize', { width: newWidth, height: newHeight });
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        const deltaX = e.screenX - startPos.current.x;
+        const deltaY = e.screenY - startPos.current.y;
+        
+        const newWidth = Math.max(100, startPos.current.w + deltaX);
+        const newHeight = Math.max(100, startPos.current.h + deltaY);
+        
+        window.electronAPI.windowAction(windowId, 'resize', { width: newWidth, height: newHeight });
+        rafRef.current = null;
+      });
     };
 
-    const onMouseUp = () => setIsDragging(false);
+    const onMouseUp = () => {
+      setIsDragging(false);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -253,6 +269,9 @@ function ResizeHandle({ windowId }) {
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, [isDragging, windowId]);
 
@@ -273,10 +292,22 @@ function ResizeHandle({ windowId }) {
       <div className="w-3 h-3 border-r-2 border-b-2 border-brand-60 rounded-sm"></div>
     </div>
   );
-}
+});
+
+const TelemetryBridge = React.memo(({ children }) => {
+  const latestTelemetry = useLiveStore(state => state.latestTelemetry);
+  const sessionDrivers = useLiveStore(state => state.sessionDrivers);
+  const trackLength = useLiveStore(state => state.trackLength);
+
+  return (
+    <TelemetryProvider telemetry={latestTelemetry} sessionDrivers={sessionDrivers} trackLength={trackLength}>
+      {children}
+    </TelemetryProvider>
+  );
+});
 
 function OverlayContainer({ windowId, children }) {
-  const overlayId = windowId.replace('overlay-', '');
+  const overlayId = (windowId || '').replace('overlay-', '');
   const settings = useAppStore(state => state.overlays[overlayId]) || {};
   const isActive = useAppStore(state => state.widgetActive[overlayId]) ?? true;
 
@@ -295,9 +326,11 @@ function OverlayContainer({ windowId, children }) {
       className="w-full h-screen overflow-hidden relative" 
       style={{ WebkitAppRegion: 'drag', opacity: currentOpacity, transition: 'opacity 0.5s ease-in-out' }}
     >
-      <div className="w-full h-full relative flex flex-col items-center justify-center" style={{ zoom: scale }}>
+      <div className="w-full h-full relative flex flex-col items-center justify-center" style={{ transform: `scale(${scale})`, transformOrigin: 'top center' }}>
         <ErrorBoundary>
-          {children}
+          <TelemetryBridge>
+            {children}
+          </TelemetryBridge>
         </ErrorBoundary>
       </div>
       <ResizeHandle windowId={windowId} />
@@ -313,60 +346,45 @@ function App() {
 
   const initSettings = useAppStore(state => state.initSettings);
 
-  // Initialize telemetry IPC connection
-  useLiveTelemetryIPC();
+  // Only initialize telemetry IPC for overlay windows, not the dashboard
+  const isOverlay = windowType === 'overlay';
+  useLiveTelemetryIPC(isOverlay);
 
   useEffect(() => {
-    initSettings();
+    let unsub;
+    initSettings().then(res => { unsub = res; });
+    return () => {
+      if (unsub) unsub();
+    };
   }, [initSettings]);
 
   if (windowType === 'overlay') {
     let content = null;
-    let title = 'Overlay';
-    let hideHeader = false;
-    let raw = false;
     
     if (overlayType === 'standings') {
       content = <LiveStandings />;
-      title = 'Live Standings';
     } else if (overlayType === 'relative') {
       content = <LiveRelative />;
-      title = 'Relative';
     } else if (overlayType === 'fuel') {
       content = <LiveFuel />;
-      title = 'Fuel Calculator';
-      hideHeader = true; // LiveFuel renders its own header
     } else if (overlayType === 'inputs') {
       content = <LiveInputs />;
-      title = 'Input Trace';
-      hideHeader = true; // LiveInputs renders without header for sleek look
     } else if (overlayType === 'radar') {
       content = <LiveRadar />;
-      title = 'Proximity Radar';
-      hideHeader = true; // Radar renders its own UI without standard header
     } else if (overlayType === 'trackmap') {
       content = <LinearTrackMap />;
-      title = 'Live Track Map';
-      hideHeader = true; // Linear map has its own minimal UI
     } else if (overlayType === 'weather') {
       content = <LiveWeather />;
-      title = 'Weather';
-      hideHeader = true; // Minimal UI
     } else if (overlayType === 'pit') {
       content = <PitHelper />;
-      title = 'Pit Helper';
-      hideHeader = true;
     } else if (overlayType === 'dash') {
       content = <DigitalDash />;
-      title = 'Digital Dashboard';
-      hideHeader = true;
-      raw = true; // Digital Dash uses raw container for solid background
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }
 
     return (
-      <OverlayContainer title={title} windowId={windowId} hideHeader={hideHeader} raw={raw}>
+      <OverlayContainer windowId={windowId}>
         {content}
       </OverlayContainer>
     );

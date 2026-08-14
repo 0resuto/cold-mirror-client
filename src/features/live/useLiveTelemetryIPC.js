@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useLiveStore } from '../../store/useLiveStore';
 import toast from 'react-hot-toast';
 
 export function useLiveTelemetryIPC(enabled = true) {
   const setLatestTelemetry = useLiveStore((state) => state.setLatestTelemetry);
   const setSessionDrivers = useLiveStore((state) => state.setSessionDrivers);
-  const clearLiveData = useLiveStore((state) => state.clearLiveData);
-  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -15,8 +13,6 @@ export function useLiveTelemetryIPC(enabled = true) {
       console.warn('IPC electronAPI is not available. Ensure you are running in Electron.');
       return;
     }
-
-    setIsConnected(true);
 
     const unsubTelemetry = window.electronAPI.onTelemetryUpdate((data) => {
       setLatestTelemetry(data); 
@@ -37,5 +33,5 @@ export function useLiveTelemetryIPC(enabled = true) {
     };
   }, [enabled, setLatestTelemetry, setSessionDrivers]);
 
-  return { isConnected };
+  return;
 }
