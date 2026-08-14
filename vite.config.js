@@ -12,6 +12,13 @@ export default defineConfig({
     electron({
       main: {
         entry: 'electron/main.js',
+        vite: {
+          build: {
+            rollupOptions: {
+              external: ['irsdk-node', 'electron']
+            }
+          }
+        }
       },
       preload: {
         input: 'electron/preload.js',
