@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -166,13 +166,19 @@ export class WindowManager {
   }
 
   createDashboard() {
-    return this.createWindow('dashboard', {
+    const win = this.createWindow('dashboard', {
       width: 900,
       height: 650,
       frame: false,
       transparent: true,
       hasShadow: false,
     }, { window: 'dashboard' });
+
+    win.on('closed', () => {
+      app.quit();
+    });
+
+    return win;
   }
 
   createOverlay(overlayId, savedSettings = {}) {
