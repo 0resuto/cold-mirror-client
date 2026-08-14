@@ -1,12 +1,62 @@
 import { IRacingSDK } from 'irsdk-node';
 import { MockTelemetryService } from './mockTelemetry.js';
 
+export function filterTelemetry(data, sessionInfo) {
+  const values = data?.values || data || {};
+  const grid = {};
+  
+  const gridSize = values.CarIdxPosition?.length || 64;
+  for (let i = 0; i < gridSize; i++) {
+    if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+      grid[i] = {
+        Position: values.CarIdxPosition[i],
+        ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
+        LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
+        Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+        LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
+        BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
+        F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
+        TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+        OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
+        HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
+        IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false,
+      };
+    }
+  }
+
+  return {
+    SessionTime: values.SessionTime,
+    player_name: sessionInfo?.data?.DriverInfo?.Drivers?.[sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
+    playerCarIdx: sessionInfo?.data?.DriverInfo?.DriverCarIdx,
+    AirTemp: values.AirTemp || 0,
+    TrackTemp: values.TrackTemp || 0,
+    WindVel: values.WindVel || 0,
+    WindDir: values.WindDir || 0,
+    Yaw: values.Yaw || 0,
+    FuelLevel: values.FuelLevel || 0,
+    FuelUsePerHour: values.FuelUsePerHour || 0,
+    SteeringWheelAngle: values.SteeringWheelAngle || 0,
+    Throttle: values.Throttle || 0,
+    Brake: values.Brake || 0,
+    Clutch: values.Clutch || 0,
+    Gear: values.Gear || 0,
+    RPM: values.RPM || 0,
+    ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
+    Speed: values.Speed || 0,
+    PitSvFlags: values.PitSvFlags || 0,
+    PitSvFuel: values.PitSvFuel || 0,
+    CarLeftRight: values.CarLeftRight || 0,
+    grid
+  };
+}
+
 export class TelemetryService {
   constructor(ipcSender) {
     this.ipcSender = ipcSender;
     this.iracing = new IRacingSDK();
     this.isRunning = false;
     this.mockService = null;
+    this.latestSession = null;
   }
 
   async start() {
@@ -39,13 +89,17 @@ export class TelemetryService {
             const session = this.iracing.getSessionData();
             const telemetry = this.iracing.getTelemetry();
             
+            if (session) {
+                this.latestSession = session;
+            }
+            
             const now = Date.now();
             if (session && (now - lastSessionSend > 1000)) {
                 this.ipcSender('session-info', { data: session });
                 lastSessionSend = now;
             }
             if (telemetry) {
-                const payload = this.filterTelemetry(telemetry);
+                const payload = filterTelemetry(telemetry, this.latestSession);
                 this.ipcSender('telemetry-update', payload);
             }
         }
@@ -67,52 +121,4 @@ export class TelemetryService {
     }
   }
 
-  filterTelemetry(data) {
-    const values = data?.values || data || {};
-    const grid = {};
-    
-    // Max cars is usually 64
-    for (let i = 0; i < 64; i++) {
-      if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
-        grid[i] = {
-          Position: values.CarIdxPosition[i],
-          ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
-          LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
-          Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
-          LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
-          BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
-          F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
-          TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
-          OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
-          HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
-          IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false,
-        };
-      }
-    }
-
-    return {
-      SessionTime: values.SessionTime,
-      player_name: data?.sessionInfo?.data?.DriverInfo?.Drivers?.[data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
-      playerCarIdx: data?.sessionInfo?.data?.DriverInfo?.DriverCarIdx,
-      AirTemp: values.AirTemp || 0,
-      TrackTemp: values.TrackTemp || 0,
-      WindVel: values.WindVel || 0,
-      WindDir: values.WindDir || 0,
-      Yaw: values.Yaw || 0,
-      FuelLevel: values.FuelLevel || 0,
-      FuelUsePerHour: values.FuelUsePerHour || 0,
-      SteeringWheelAngle: values.SteeringWheelAngle || 0,
-      Throttle: values.Throttle || 0,
-      Brake: values.Brake || 0,
-      Clutch: values.Clutch || 0,
-      Gear: values.Gear || 0,
-      RPM: values.RPM || 0,
-      ShiftIndicatorPct: values.ShiftIndicatorPct || 0,
-      Speed: values.Speed || 0,
-      PitSvFlags: values.PitSvFlags || 0,
-      PitSvFuel: values.PitSvFuel || 0,
-      CarLeftRight: values.CarLeftRight || 0,
-      grid
-    };
-  }
 }

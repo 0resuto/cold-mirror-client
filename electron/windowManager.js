@@ -23,6 +23,20 @@ export class WindowManager {
 
     // Handle generic window actions
     ipcMain.on('window-action', (event, { windowId, action, payload }) => {
+      const senderWin = BrowserWindow.fromWebContents(event.sender);
+      let senderId = null;
+      for (const [id, w] of this.windows.entries()) {
+        if (w === senderWin) {
+          senderId = id;
+          break;
+        }
+      }
+
+      if (senderId !== 'dashboard' && senderId !== windowId) {
+        console.warn(`Unauthorized window action: ${senderId} attempting to control ${windowId}`);
+        return;
+      }
+
       const win = this.windows.get(windowId);
       if (!win) return;
 
@@ -224,9 +238,10 @@ export class WindowManager {
     return Array.from(this.windows.values());
   }
 
-  broadcast(channel, data) {
-    this.windows.forEach(win => {
+  broadcast(channel, data, overlayOnly = false) {
+    this.windows.forEach((win, id) => {
       if (!win.isDestroyed()) {
+        if (overlayOnly && !id.startsWith('overlay-')) return;
         win.webContents.send(channel, data);
       }
     });

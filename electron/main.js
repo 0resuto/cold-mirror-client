@@ -3,6 +3,14 @@ import { WindowManager } from './windowManager.js';
 import { TelemetryService } from './services/telemetry.js';
 import { Store } from './services/store.js';
 
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 let windowManager;
 
 app.setName('Cold Mirror');
@@ -39,16 +47,10 @@ app.whenReady().then(() => {
 
   const telemetry = new TelemetryService((channel, data) => {
     if (windowManager) {
-      windowManager.broadcast(channel, data);
+      windowManager.broadcast(channel, data, true); // send only to overlays
     }
   });
   telemetry.start();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      windowManager.createDashboard();
-    }
-  });
 });
 
 app.on('window-all-closed', () => {

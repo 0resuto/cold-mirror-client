@@ -13,14 +13,14 @@ export class Store {
     return this.data[key];
   }
 
-  set(key, val) {
+  async set(key, val) {
     this.data[key] = val;
-    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    await fs.promises.writeFile(this.path, JSON.stringify(this.data, null, 2));
   }
 
-  setAll(newVal) {
+  async setAll(newVal) {
     this.data = { ...this.data, ...newVal };
-    fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2));
+    await fs.promises.writeFile(this.path, JSON.stringify(this.data, null, 2));
   }
 
   getAll() {
