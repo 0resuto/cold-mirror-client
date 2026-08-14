@@ -21,8 +21,8 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
   const defaultInactive = isPitOrRadar ? 0.0 : 0.5;
   
   const scale = state.scale || 1.0;
-  const activeOpacity = state.activeOpacity ?? 1.0;
-  const inactiveOpacity = state.inactiveOpacity ?? defaultInactive;
+  const widgetOpacity = state.widgetOpacity ?? 1.0;
+  const bgOpacity = state.bgOpacity ?? 0.6;
 
   const renderSlider = (label, key, val, min, max) => (
     <div className="flex items-center gap-3">
@@ -110,8 +110,8 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
       {isExpanded && (
         <div className="px-4 pb-4 pt-3 border-t border-brand-60/20 flex flex-col gap-3 bg-black/20">
           {renderSlider('Scale', 'scale', scale, 0.5, 2.0)}
-          {renderSlider('Active Opacity', 'activeOpacity', activeOpacity, 0.0, 1.0)}
-          {renderSlider('Inactive Opacity', 'inactiveOpacity', inactiveOpacity, 0.0, 1.0)}
+          {renderSlider('Widget Opacity', 'widgetOpacity', widgetOpacity, 0.0, 1.0)}
+          {renderSlider('BG Opacity', 'bgOpacity', bgOpacity, 0.0, 1.0)}
           
           {(config.id === 'standings' || config.id === 'relative') && (() => {
             const defaultCols = config.id === 'standings' ? defaultStandingsColumns : defaultRelativeColumns;

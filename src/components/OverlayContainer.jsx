@@ -79,32 +79,36 @@ const TelemetryBridge = React.memo(({ children }) => {
 
 export function OverlayContainer({ windowId, children }) {
   const overlayId = (windowId || '').replace('overlay-', '');
-  const settings = useAppStore(state => state.overlays[overlayId]) || {};
-  const isActive = useAppStore(state => state.widgetActive[overlayId]) ?? true;
-
-  const isPitOrRadar = overlayId === 'pit' || overlayId === 'radar';
-  const defaultInactive = isPitOrRadar ? 0.0 : 0.5;
-
-  const scale = settings.scale || 1.0;
-  const activeOpacity = settings.activeOpacity ?? 1.0;
-  const inactiveOpacity = settings.inactiveOpacity ?? defaultInactive;
-
-  const isLocked = settings.clickThrough;
-  const currentOpacity = (!isLocked || isActive) ? activeOpacity : inactiveOpacity;
   
+  const settings = useAppStore(state => state.overlays[overlayId]) || {};
+  
+  const scale = settings.scale || 1.0;
+  const widgetOpacity = settings.widgetOpacity ?? 1.0;
+  const bgOpacity = settings.bgOpacity ?? 0.6;
+  const isLocked = settings.clickThrough;
+
+  // The library now expects a CSS variable to control the persistent background opacity.
+  const bgColor = `rgba(30, 30, 36, ${bgOpacity})`;
+
   return (
     <div 
-      className="w-full h-screen overflow-hidden relative" 
-      style={{ WebkitAppRegion: 'drag', opacity: currentOpacity, transition: 'opacity 0.5s ease-in-out' }}
+      className={`w-full h-screen overflow-hidden relative transition-colors duration-300 ${
+        !isLocked ? 'bg-black/40 border border-white/10 backdrop-blur-sm' : ''
+      }`}
+      style={{ 
+        WebkitAppRegion: isLocked ? 'no-drag' : 'drag', 
+        opacity: widgetOpacity,
+        '--widget-bg-color': bgColor
+      }}
     >
-      <div className="w-full h-full relative flex flex-col items-center justify-center" style={{ transform: `scale(${scale})`, transformOrigin: 'top center' }}>
+      <div className="w-full h-full relative flex flex-col items-start justify-start" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         <ErrorBoundary>
           <TelemetryBridge>
             {children}
           </TelemetryBridge>
         </ErrorBoundary>
       </div>
-      <ResizeHandle windowId={windowId} />
+      {!isLocked && <ResizeHandle windowId={windowId} />}
     </div>
   );
 }

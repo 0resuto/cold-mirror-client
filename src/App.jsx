@@ -18,6 +18,10 @@ function App() {
   const isOverlay = windowType === 'overlay';
   useLiveTelemetryIPC(isOverlay);
 
+  // Fetch click-through status so widgets can hide their internal background
+  const overlayId = (windowId || '').replace('overlay-', '');
+  const isLocked = useAppStore(state => state.overlays[overlayId]?.clickThrough) ?? false;
+
   useEffect(() => {
     let unsub;
     initSettings().then(res => { unsub = res; });
@@ -30,23 +34,23 @@ function App() {
     let content = null;
     
     if (overlayType === 'standings') {
-      content = <LiveStandings />;
+      content = <LiveStandings isLocked={isLocked} />;
     } else if (overlayType === 'relative') {
-      content = <LiveRelative />;
+      content = <LiveRelative isLocked={isLocked} />;
     } else if (overlayType === 'fuel') {
-      content = <LiveFuel />;
+      content = <LiveFuel isLocked={isLocked} />;
     } else if (overlayType === 'inputs') {
-      content = <LiveInputs />;
+      content = <LiveInputs isLocked={isLocked} />;
     } else if (overlayType === 'radar') {
-      content = <LiveRadar />;
+      content = <LiveRadar isLocked={isLocked} />;
     } else if (overlayType === 'trackmap') {
-      content = <LinearTrackMap />;
+      content = <LinearTrackMap isLocked={isLocked} />;
     } else if (overlayType === 'weather') {
-      content = <LiveWeather />;
+      content = <LiveWeather isLocked={isLocked} />;
     } else if (overlayType === 'pit') {
-      content = <PitHelper />;
+      content = <PitHelper isLocked={isLocked} />;
     } else if (overlayType === 'dash') {
-      content = <DigitalDash />;
+      content = <DigitalDash isLocked={isLocked} />;
     } else {
       content = <div className="text-white p-4">Unknown overlay type</div>;
     }
