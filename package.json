@@ -26,6 +26,7 @@
     "release": "release-it"
   },
   "dependencies": {
+    "cold-mirror-widgets": "github:0resuto/cold-mirror-widgets",
     "framer-motion": "^13.1.0",
     "irsdk-node": "^4.4.0",
     "lucide-react": "^0.460.0",
@@ -50,6 +51,7 @@
   "build": {
     "appId": "com.coldmirror.client",
     "productName": "Cold Mirror",
+    "artifactName": "${name}-${version}-${os}.${ext}",
     "directories": {
       "output": "release/"
     },
