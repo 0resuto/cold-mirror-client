@@ -5,6 +5,8 @@ import { Store } from './services/store.js';
 
 let windowManager;
 
+app.setName('Cold Mirror');
+
 app.whenReady().then(() => {
   const store = new Store({
     configName: 'user-preferences',
