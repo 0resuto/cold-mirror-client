@@ -26,7 +26,7 @@
     "release": "release-it"
   },
   "dependencies": {
-    "cold-mirror-widgets": "github:0resuto/cold-mirror-widgets",
+    "cold-mirror-widgets": "file:../cold-mirror-widgets",
     "framer-motion": "^13.1.0",
     "irsdk-node": "^4.4.0",
     "lucide-react": "^0.460.0",
