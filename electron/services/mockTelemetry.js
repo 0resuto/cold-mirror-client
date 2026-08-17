@@ -20,10 +20,10 @@ export class MockTelemetryService {
         DriverInfo: {
           DriverCarIdx: 1,
           Drivers: [
-            { CarIdx: 0, UserName: "Radar Tester 1", CarNumber: "1", IRating: 2500, LicLevel: 17, LicString: "A 3.50", CarClassColor: 0xff0000, CarClassShortName: "GT3" },
+            { CarIdx: 0, UserName: "Тестер Радара 1", CarNumber: "1", IRating: 2500, LicLevel: 17, LicString: "A 3.50", CarClassColor: 0xff0000, CarClassShortName: "GT3" },
             { CarIdx: 1, UserName: "Player", CarNumber: "2", IRating: 2100, LicLevel: 14, LicString: "B 2.10", CarClassColor: 0x00ff00, CarClassShortName: "LMP2" },
             { CarIdx: 2, UserName: "Radar Tester 2", CarNumber: "42", IRating: 1800, LicLevel: 11, LicString: "C 3.99", CarClassColor: 0x00ff00, CarClassShortName: "LMP2" },
-            { CarIdx: 3, UserName: "Fast Guy", CarNumber: "99", IRating: 3100, LicLevel: 18, LicString: "A 4.99", CarClassColor: 0xff0000, CarClassShortName: "GT3" },
+            { CarIdx: 3, UserName: "Быстрый Гонщик", CarNumber: "99", IRating: 3100, LicLevel: 18, LicString: "A 4.99", CarClassColor: 0xff0000, CarClassShortName: "GT3" },
             { CarIdx: 4, UserName: "Lapped Car", CarNumber: "7", IRating: 1200, LicLevel: 8, LicString: "D 2.50", CarClassColor: 0x0000ff, CarClassShortName: "GT4" },
             { CarIdx: 5, UserName: "Rival", CarNumber: "33", IRating: 2150, LicLevel: 15, LicString: "B 3.00", CarClassColor: 0x00ff00, CarClassShortName: "LMP2" },
             { CarIdx: 6, UserName: "Leader", CarNumber: "10", IRating: 4000, LicLevel: 17, LicString: "A 4.00", CarClassColor: 0xff0000, CarClassShortName: "GT3" },
@@ -115,7 +115,7 @@ export class MockTelemetryService {
               CarIdxHasDamage: [true, false, false, false, true, false, false], 
               CarIdxIsFastestLap: [false, false, false, false, false, false, true], 
               CarIdxBestLapTime: [75.2, 72.1, 74.5, 71.8, 80.0, 73.0, 71.5],
-              CarIdxLastLapTime: [76.1, 72.3, 75.0, 72.0, 81.2, 73.5, 71.8],
+              CarIdxLastLapTime: [76.1, 72.3, 75.0, 72.0, 81.2, 73.5, 71.5],
               CarIdxF2Time: [12.5, 0.0, 4.2, -1.5, 45.0, 2.1, -15.0],
             }
           };

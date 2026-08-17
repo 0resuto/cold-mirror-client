@@ -5,6 +5,17 @@ function getSessionData(sessionInfo) {
   return sessionInfo?.data || sessionInfo || {};
 }
 
+function decodeIRacingString(str) {
+  if (!str) return str;
+  // If the string contains characters > 255, it might already be properly decoded UTF-8,
+  // but if irsdk-node just gave us raw bytes mapped to strings, they'll be <= 255.
+  const buf = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) {
+    buf[i] = str.charCodeAt(i);
+  }
+  return new TextDecoder('windows-1251').decode(buf);
+}
+
 function normalizeSessionData(sessionInfo) {
   const sessionData = getSessionData(sessionInfo);
   const driverInfo = sessionData?.DriverInfo;
@@ -19,6 +30,9 @@ function normalizeSessionData(sessionInfo) {
       Drivers: (driverInfo.Drivers || []).map((driver) => ({
         ...driver,
         CarIdx: Number.isFinite(Number(driver.CarIdx)) ? Number(driver.CarIdx) : null,
+        UserName: decodeIRacingString(driver.UserName),
+        TeamName: decodeIRacingString(driver.TeamName),
+        CarClassShortName: decodeIRacingString(driver.CarClassShortName),
       })),
     },
   };
@@ -51,6 +65,16 @@ export function filterTelemetry(data, sessionInfo) {
     64
   );
 
+  let sessionBestLapTime = -1;
+  if (values.CarIdxBestLapTime) {
+    for (let i = 0; i < values.CarIdxBestLapTime.length; i++) {
+      const time = values.CarIdxBestLapTime[i];
+      if (time > 0 && (sessionBestLapTime === -1 || time < sessionBestLapTime)) {
+        sessionBestLapTime = time;
+      }
+    }
+  }
+
   for (let i = 0; i < gridSize; i++) {
     const position = values.CarIdxPosition?.[i] || 0;
     const lapDistPct = values.CarIdxLapDistPct?.[i];
@@ -78,12 +102,15 @@ export function filterTelemetry(data, sessionInfo) {
         OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
         HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
         IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false,
+        IsSessionBest: values.CarIdxBestLapTime && values.CarIdxBestLapTime[i] > 0 && values.CarIdxBestLapTime[i] === sessionBestLapTime,
+        IsLastLapSessionBest: values.CarIdxLastLapTime && values.CarIdxLastLapTime[i] > 0 && values.CarIdxLastLapTime[i] === sessionBestLapTime,
       };
     }
   }
 
   return {
     SessionTime: values.SessionTime,
+    SessionBestLapTime: sessionBestLapTime,
     player_name: drivers.find((entry) => entry?.CarIdx === playerCarIdx)?.UserName || drivers[playerCarIdx]?.UserName || '',
     playerCarIdx,
     AirTemp: values.AirTemp || 0,
