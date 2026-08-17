@@ -17,6 +17,8 @@
 
 ---
 
+<img width="2216" height="1059" alt="Cold Mirror Widgets Playground" src="https://github.com/user-attachments/assets/97cf5eef-3a05-4823-ac9e-2ec1e526b789" />
+
 ## Overview
 
 Cold Mirror Client provides transparent, telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator. 
@@ -28,89 +30,116 @@ It runs as a fully independent application, reading iRacing shared memory via `i
 `cold-mirror-widgets` is an Electron app that reads live telemetry from the iRacing SDK in the main process and streams it to a dashboard window plus any number of overlay windows via IPC.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }}}%%
-flowchart LR
+%%{init: {
+  'theme': 'base',
+  'flowchart': { 'curve': 'basis', 'nodeSpacing': 45, 'rankSpacing': 65, 'wrap': true },
+  'themeVariables': {
+    'fontSize': '14px',
+    'primaryColor': '#37474F',
+    'primaryTextColor': '#ffffff',
+    'primaryBorderColor': '#78909C',
+    'lineColor': '#90A4AE',
+    'secondaryColor': '#37474F',
+    'tertiaryColor': '#37474F'
+  }
+}}%%
+flowchart TB
     subgraph MAIN["🖥️ Main Process"]
-        direction TB
+        direction LR
         SDK(["iRacing SDK<br/>Shared Memory"])
-        TS["TelemetryService<br/><sub>telemetry.js</sub>"]
-        WM{{"WindowManager<br/><sub>windowManager.js</sub>"}}
-        ST[("Store<br/><sub>store.js · JSON</sub>")]
-
-        SDK -->|"poll @ ~30fps"| TS
+        P1(["poll @ ~30fps"]):::plate
+        TS["TelemetryService<br/>telemetry.js"]
+        WM["WindowManager<br/>windowManager.js"]
+        ST[("Store<br/>store.js")]
+        SDK --> P1 --> TS
         TS --> WM
         WM --> ST
     end
 
-    PL{{"preload.js<br/><sub>contextBridge</sub>"}}
+    PL["preload.js<br/>contextBridge"]
+    MAIN ~~~ PL
 
-    subgraph DASH["📊 Renderer · Dashboard"]
-        direction TB
-        DB["Dashboard.jsx"]
-        AS[["useAppStore<br/><sub>Zustand</sub>"]]
-        WC["WidgetCard.jsx"]
-
-        DB --> AS --> WC
-    end
+    P2(["broadcast telemetry & session"]):::plate
+    P3(["ipc send"]):::plate
+    WM ==> P2 ==> PL
+    PL ==> P3 ==> WM
 
     subgraph OVERLAY["🪟 Renderer · Overlay N"]
-        direction TB
+        direction LR
         LT["useLiveTelemetryIPC"]
-        LS[["useLiveStore<br/><sub>Zustand</sub>"]]
+        LS[["useLiveStore<br/>Zustand"]]
         TBR["TelemetryBridge"]
-        TP["TelemetryProvider<br/><sub>shared widgets package</sub>"]
-        W(["Widget Components<br/><sub>Speed, Fuel, …</sub>"])
-
+        TP["TelemetryProvider<br/>shared widgets"]
+        W(["Widget Components<br/>Speed, Fuel, …"])
         LT --> LS --> TBR --> TP --> W
     end
 
-    WM ==>|"broadcast telemetry & session"| PL
-    PL -.->|"settings update"| AS
-    PL -.->|"telemetry update"| LT
-    WC -->|"control actions"| PL
-    PL ==>|"ipc send"| WM
+    subgraph DASH["📊 Renderer · Dashboard"]
+        direction LR
+        DB["Dashboard.jsx"]
+        AS[["useAppStore<br/>Zustand"]]
+        WC["WidgetCard.jsx"]
+        DB --> AS --> WC
+    end
 
-    classDef core fill:#E3F2FD,stroke:#1565C0,stroke-width:1.5px,color:#0D47A1
-    classDef bridge fill:#FFF3E0,stroke:#E65100,stroke-width:1.5px,color:#E65100
-    classDef app fill:#E8F5E9,stroke:#2E7D32,stroke-width:1.5px,color:#1B5E20
-    classDef overlay fill:#F3E5F5,stroke:#6A1B9A,stroke-width:1.5px,color:#4A148C
-    classDef diskstore fill:#FCE4EC,stroke:#AD1457,stroke-width:1.5px,color:#880E4F
-    classDef memstore fill:#FFFDE7,stroke:#F9A825,stroke-width:1.5px,color:#F57F17
+    PL ~~~ OVERLAY
+    PL ~~~ DASH
+
+    P4(["telemetry update"]):::plate
+    P5(["settings update"]):::plate
+    P6(["control actions"]):::plate
+    PL -.-> P4 -.-> LT
+    PL -.-> P5 -.-> AS
+    WC --> P6 --> PL
+
+    OVERLAY ~~~ DASH
+
+    subgraph LEGEND["🔑 Legend"]
+        direction LR
+        L1[" "]
+        LL1(["Primary IPC channel"]):::plate
+        L2[" "]
+        L3[" "]
+        LL2(["Subscription callback"]):::plate
+        L4[" "]
+        L5[" "]
+        LL3(["Direct call / data flow"]):::plate
+        L6[" "]
+        L1 ==> LL1 ==> L2
+        L3 -.-> LL2 -.-> L4
+        L5 --> LL3 --> L6
+        LG[("On-disk store")]
+        LZ[["In-memory state · Zustand"]]
+    end
+
+    OVERLAY ~~~ LEGEND
+
+    classDef core fill:#1565C0,stroke:#90CAF9,stroke-width:1.5px,color:#ffffff
+    classDef bridge fill:#E65100,stroke:#FFCC80,stroke-width:1.5px,color:#ffffff
+    classDef app fill:#2E7D32,stroke:#A5D6A7,stroke-width:1.5px,color:#ffffff
+    classDef overlay fill:#6A1B9A,stroke:#CE93D8,stroke-width:1.5px,color:#ffffff
+    classDef diskstore fill:#AD1457,stroke:#F48FB1,stroke-width:1.5px,color:#ffffff
+    classDef memstore fill:#F57F17,stroke:#FFE082,stroke-width:1.5px,color:#ffffff
+    classDef plate fill:#37474F,stroke:#607D8B,stroke-width:1px,color:#ffffff
 
     class SDK,TS,WM core
     class PL bridge
     class DB,WC app
     class LT,TBR,TP,W overlay
-    class ST diskstore
-    class AS,LS memstore
+    class ST,LG diskstore
+    class AS,LS,LZ memstore
 
-    style MAIN fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
-    style DASH fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
-    style OVERLAY fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
-```
+    style MAIN fill:none,stroke:#78909C,stroke-width:1px,color:#90A4AE
+    style DASH fill:none,stroke:#78909C,stroke-width:1px,color:#90A4AE
+    style OVERLAY fill:none,stroke:#78909C,stroke-width:1px,color:#90A4AE
+    style LEGEND fill:none,stroke:#546E7A,stroke-width:1px,stroke-dasharray: 3 3,color:#78909C
 
-<sub>Legend</sub>
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '12px' }}}%%
-flowchart TB
-    A[" "] ==>|"Primary IPC channel"| B[" "]
-    C[" "] -.->|"Subscription callback"| D[" "]
-    E[" "] -->|"Direct call / data flow"| F[" "]
-    G[("On-disk store")]
-    H[["In-memory state · Zustand"]]
-
-    classDef diskstore fill:#FCE4EC,stroke:#AD1457,stroke-width:1.5px,color:#880E4F
-    classDef memstore fill:#FFFDE7,stroke:#F9A825,stroke-width:1.5px,color:#F57F17
-    class G diskstore
-    class H memstore
-
-    style A fill:none,stroke:none
-    style B fill:none,stroke:none
-    style C fill:none,stroke:none
-    style D fill:none,stroke:none
-    style E fill:none,stroke:none
-    style F fill:none,stroke:none
+    style L1 fill:none,stroke:none
+    style L2 fill:none,stroke:none
+    style L3 fill:none,stroke:none
+    style L4 fill:none,stroke:none
+    style L5 fill:none,stroke:none
+    style L6 fill:none,stroke:none
 ```
 
 **Data flow, in short:**

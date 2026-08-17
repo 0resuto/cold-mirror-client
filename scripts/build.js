@@ -6,7 +6,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const RED = '\x1b[31m';
 const CYAN = '\x1b[36m';
@@ -53,6 +53,11 @@ try {
 
   console.log(`\n${CYAN}> Packaging application (electron-builder)...${RESET}\n`);
   execSync('electron-builder', { stdio: 'inherit' });
+
+  const { version } = JSON.parse(readFileSync('package.json', 'utf-8'));
+  const zipName = `cold-mirror-client-${version}-win.zip`;
+  console.log(`\n${CYAN}> Creating ${zipName}...${RESET}\n`);
+  execSync(`powershell -Command "Compress-Archive -Path 'release/win-unpacked/*' -DestinationPath 'release/${zipName}' -Force"`, { stdio: 'inherit' });
 
   console.log(`\n${BOLD}${CYAN}Build completed successfully.${RESET}\n`);
 } catch (error) {

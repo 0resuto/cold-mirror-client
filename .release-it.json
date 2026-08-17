@@ -5,7 +5,8 @@
     "requireBranch": "main"
   },
   "github": {
-    "release": false
+    "release": true,
+    "assets": ["release/cold-mirror-client-*-win.zip"]
   },
   "npm": {
     "publish": false
