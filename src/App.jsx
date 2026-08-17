@@ -18,9 +18,11 @@ function App() {
   const isOverlay = windowType === 'overlay';
   useLiveTelemetryIPC(isOverlay);
 
-  // Fetch click-through status so widgets can hide their internal background
+  // Fetch settings for the overlay
   const overlayId = (windowId || '').replace('overlay-', '');
-  const isLocked = useAppStore(state => state.overlays[overlayId]?.clickThrough) ?? false;
+  const settings = useAppStore(state => state.overlays[overlayId]) || {};
+  const isLocked = settings.clickThrough ?? false;
+  const columns = settings.columns;
 
   useEffect(() => {
     let unsub;
@@ -34,9 +36,9 @@ function App() {
     let content = null;
     
     if (overlayType === 'standings') {
-      content = <LiveStandings isLocked={isLocked} />;
+      content = <LiveStandings isLocked={isLocked} columns={columns} />;
     } else if (overlayType === 'relative') {
-      content = <LiveRelative isLocked={isLocked} />;
+      content = <LiveRelative isLocked={isLocked} columns={columns} />;
     } else if (overlayType === 'fuel') {
       content = <LiveFuel isLocked={isLocked} />;
     } else if (overlayType === 'inputs') {
