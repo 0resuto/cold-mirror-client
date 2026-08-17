@@ -24,9 +24,13 @@ export function Dashboard() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
+    let unsub;
     if (window.electronAPI?.onMaximizeStateChange) {
-      window.electronAPI.onMaximizeStateChange(setIsMaximized);
+      unsub = window.electronAPI.onMaximizeStateChange(setIsMaximized);
     }
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   if (!settingsLoaded) {

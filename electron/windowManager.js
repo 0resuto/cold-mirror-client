@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -195,6 +195,31 @@ export class WindowManager {
     return win;
   }
 
+  ensureVisibleBounds(x, y, width, height) {
+    if (x === undefined || y === undefined) return { x, y };
+    
+    const displays = screen.getAllDisplays();
+    const isVisible = displays.some(display => {
+      const bounds = display.bounds;
+      return (
+        x < bounds.x + bounds.width &&
+        x + width > bounds.x &&
+        y < bounds.y + bounds.height &&
+        y + height > bounds.y
+      );
+    });
+
+    if (!isVisible) {
+      const primary = screen.getPrimaryDisplay().workArea;
+      return {
+        x: Math.round(primary.x + (primary.width - width) / 2),
+        y: Math.round(primary.y + (primary.height - height) / 2)
+      };
+    }
+    
+    return { x, y };
+  }
+
   createOverlay(overlayId, savedSettings = {}) {
     const minWidths = {
       'inputs': 300,
@@ -213,13 +238,17 @@ export class WindowManager {
       'dash': 200,
     };
 
+    const width = savedSettings.width || (overlayId === 'trackmap' ? 800 : overlayId === 'weather' ? 420 : overlayId === 'pit' ? 420 : overlayId === 'dash' ? 600 : 400);
+    const height = savedSettings.height || (overlayId === 'trackmap' ? 80 : overlayId === 'weather' ? 80 : overlayId === 'pit' ? 140 : overlayId === 'dash' ? 300 : 600);
+    const safeBounds = this.ensureVisibleBounds(savedSettings.x, savedSettings.y, width, height);
+
     const win = this.createWindow(`overlay-${overlayId}`, {
-      width: savedSettings.width || (overlayId === 'trackmap' ? 800 : overlayId === 'weather' ? 420 : overlayId === 'pit' ? 420 : overlayId === 'dash' ? 600 : 400),
-      height: savedSettings.height || (overlayId === 'trackmap' ? 80 : overlayId === 'weather' ? 80 : overlayId === 'pit' ? 140 : overlayId === 'dash' ? 300 : 600),
+      width,
+      height,
       minWidth: minWidths[overlayId] || 150,
       minHeight: minHeights[overlayId] || 150,
-      x: savedSettings.x,
-      y: savedSettings.y,
+      x: safeBounds.x,
+      y: safeBounds.y,
       frame: false,
       transparent: true,
       alwaysOnTop: true,

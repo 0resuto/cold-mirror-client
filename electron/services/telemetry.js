@@ -7,13 +7,27 @@ function getSessionData(sessionInfo) {
 
 function decodeIRacingString(str) {
   if (!str) return str;
-  // If the string contains characters > 255, it might already be properly decoded UTF-8,
-  // but if irsdk-node just gave us raw bytes mapped to strings, they'll be <= 255.
+  
+  let isLatin1 = true;
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) > 255) {
+      isLatin1 = false;
+      break;
+    }
+  }
+  
+  if (!isLatin1) return str;
+
   const buf = new Uint8Array(str.length);
   for (let i = 0; i < str.length; i++) {
     buf[i] = str.charCodeAt(i);
   }
-  return new TextDecoder('windows-1251').decode(buf);
+  
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch (e) {
+    return new TextDecoder('windows-1251').decode(buf);
+  }
 }
 
 function normalizeSessionData(sessionInfo) {
@@ -169,7 +183,7 @@ export class TelemetryService {
         if (!this.isRunning) return;
         if (this.mockService) return; // Mock is running
         
-        if (this.iracing.waitForData(16)) {
+        if (this.iracing.waitForData(0)) {
             const session = this.iracing.getSessionData();
             const telemetry = this.iracing.getTelemetry();
             
