@@ -52,17 +52,17 @@ export class MockTelemetryService {
       const speed = gear * 30 + (throttle * 20); // roughly km/h
       const fuelLevel = Math.max(0, 50 - (this.sessionTime * 0.05));
 
-          const playerDist = Math.abs((this.sessionTime * 0.010) % 1);
+          const playerDist = (this.sessionTime * 0.010) % 1;
           
-          // Cars 0 and 2 stay very close to the player to test the Radar widget
-          const car0Dist = Math.abs((playerDist + Math.sin(this.sessionTime * 0.2) * 0.005) % 1);
-          const car2Dist = Math.abs((playerDist + Math.cos(this.sessionTime * 0.15) * 0.008) % 1);
+          // Cars 0 and 2 stay close but occasionally leave the radar zone to test inactivity
+          const car0Dist = (playerDist + Math.sin(this.sessionTime * 0.2) * 0.05 + 1) % 1;
+          const car2Dist = (playerDist + Math.cos(this.sessionTime * 0.15) * 0.06 + 1) % 1;
           
           // Other cars are spread across the track for the Track Map widget
           const car3Dist = (playerDist + 0.15) % 1; // 15% ahead
           const car4Dist = (playerDist + 0.50) % 1; // Opposite side of track
           const car5Dist = (playerDist + 0.85) % 1; // 15% behind
-          const car6Dist = (playerDist + 0.05) % 1; // 5% ahead
+          const car6Dist = (playerDist + Math.sin(this.sessionTime * 0.1) * 0.05 + 1) % 1; // Oscillates ±5% (±200m) slowly
 
           let delta0 = car0Dist - playerDist;
           if (delta0 > 0.5) delta0 -= 1; if (delta0 < -0.5) delta0 += 1;
@@ -70,9 +70,13 @@ export class MockTelemetryService {
           let delta2 = car2Dist - playerDist;
           if (delta2 > 0.5) delta2 -= 1; if (delta2 < -0.5) delta2 += 1;
           
+          let delta6 = car6Dist - playerDist;
+          if (delta6 > 0.5) delta6 -= 1; if (delta6 < -0.5) delta6 += 1;
+          
           let leftRight = 1; // Clear
           if (Math.abs(delta0 * 4000) < 5) leftRight = 2; // Car 0 Left
           else if (Math.abs(delta2 * 4000) < 5) leftRight = 3; // Car 2 Right
+          else if (Math.abs(delta6 * 4000) < 5) leftRight = 2; // Car 6 Left
 
           const airTemp = 22.5 + Math.sin(this.sessionTime * 0.05) * 0.5;
           const trackTemp = 35.2 + Math.cos(this.sessionTime * 0.02) * 1.5;

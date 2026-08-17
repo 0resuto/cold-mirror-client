@@ -85,6 +85,7 @@ export function OverlayContainer({ windowId, children }) {
   const scale = settings.scale || 1.0;
   const widgetOpacity = settings.widgetOpacity ?? 1.0;
   const bgOpacity = settings.bgOpacity ?? 0.6;
+  const inactiveOpacity = settings.inactiveOpacity;
   const isLocked = settings.clickThrough;
 
   // The library now expects a CSS variable to control the persistent background opacity.
@@ -98,7 +99,8 @@ export function OverlayContainer({ windowId, children }) {
       style={{ 
         WebkitAppRegion: isLocked ? 'no-drag' : 'drag', 
         opacity: widgetOpacity,
-        '--widget-bg-color': bgColor
+        '--widget-bg-color': bgColor,
+        ...(inactiveOpacity !== undefined && { '--inactive-opacity': inactiveOpacity })
       }}
     >
       <div className="w-full h-full relative flex flex-col items-start justify-start" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>

@@ -1,4 +1,4 @@
-import { IRacingSDK } from 'irsdk-node';
+import { IRacingSDK, CarLeftRight as IrsdkCarLeftRight } from 'irsdk-node';
 import { MockTelemetryService } from './mockTelemetry.js';
 
 function getSessionData(sessionInfo) {
@@ -130,7 +130,7 @@ export function filterTelemetry(data, sessionInfo) {
     Speed: values.Speed || 0,
     PitSvFlags: values.PitSvFlags || 0,
     PitSvFuel: values.PitSvFuel || 0,
-    CarLeftRight: typeof values.CarLeftRight === 'string' ? (IRacingSDK.CarLeftRight?.[values.CarLeftRight] || 0) : (values.CarLeftRight || 0),
+    CarLeftRight: typeof values.CarLeftRight === 'string' ? (IrsdkCarLeftRight?.[values.CarLeftRight] || 0) : (values.CarLeftRight || 0),
     grid
   };
 }

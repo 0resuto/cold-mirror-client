@@ -23,6 +23,7 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
   const scale = state.scale || 1.0;
   const widgetOpacity = state.widgetOpacity ?? 1.0;
   const bgOpacity = state.bgOpacity ?? 0.6;
+  const inactiveOpacity = state.inactiveOpacity ?? defaultInactive;
 
   const renderSlider = (label, key, val, min, max, formatter = (v) => Math.round(v * 100) + '%') => (
     <div className="flex items-center gap-3">
@@ -111,6 +112,7 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
         <div className="px-4 pb-4 pt-3 border-t border-brand-60/20 flex flex-col gap-3 bg-black/20">
           {renderSlider('Scale', 'scale', scale, 0.5, 2.0)}
           {renderSlider('Widget Opacity', 'widgetOpacity', widgetOpacity, 0.0, 1.0)}
+          {renderSlider('Inactive Opacity', 'inactiveOpacity', inactiveOpacity, 0.0, 1.0)}
           {renderSlider('BG Opacity', 'bgOpacity', bgOpacity, 0.0, 1.0)}
           {config.id === 'inputs' && renderSlider('Trace Range', 'traceRange', state.traceRange ?? 5.0, 5.0, 30.0, (v) => v.toFixed(1) + 's')}
           
