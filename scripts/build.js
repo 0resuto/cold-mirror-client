@@ -42,6 +42,9 @@ if (!existsSync('public/app_icon.ico')) {
   fail('application icon missing at public/app_icon.ico.');
 }
 
+// ── Disable code signing ────────────────────────────────────────────
+process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
+
 // ── Build ───────────────────────────────────────────────────────────
 
 try {
@@ -49,7 +52,7 @@ try {
   execSync('vite build', { stdio: 'inherit' });
 
   console.log(`\n${CYAN}> Packaging application (electron-builder)...${RESET}\n`);
-  execSync('electron-builder', { stdio: 'pipe', encoding: 'utf-8' });
+  execSync('electron-builder', { stdio: 'inherit' });
 
   console.log(`\n${BOLD}${CYAN}Build completed successfully.${RESET}\n`);
 } catch (error) {
