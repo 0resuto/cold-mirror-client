@@ -75,7 +75,7 @@ export class WindowManager {
       return this.store.getAll();
     });
 
-    ipcMain.on('update-overlay-setting', (event, { id, settings }) => {
+    ipcMain.on('update-overlay-setting', (event, { id, settings, senderId }) => {
       const overlays = this.store.get('overlays') || {};
       overlays[id] = { ...overlays[id], ...settings };
       this.store.set('overlays', overlays);
@@ -87,15 +87,15 @@ export class WindowManager {
       }
       
       // Broadcast settings update to all windows so Dashboard updates UI
-      this.broadcast('settings-updated', this.store.getAll());
+      this.broadcast('settings-updated', this.store.getAll(), false, senderId);
     });
 
-    ipcMain.on('toggle-overlay', (event, id, state) => {
-      this.toggleOverlay(id, state);
+    ipcMain.on('toggle-overlay', (event, id, state, senderId) => {
+      this.toggleOverlay(id, state, senderId);
     });
   }
 
-  toggleOverlay(id, state) {
+  toggleOverlay(id, state, senderId = null) {
     const overlays = this.store.get('overlays') || {};
     if (!overlays[id]) overlays[id] = {};
     
@@ -113,7 +113,7 @@ export class WindowManager {
       }
     }
     
-    this.broadcast('settings-updated', this.store.getAll());
+    this.broadcast('settings-updated', this.store.getAll(), false, senderId);
   }
 
   createWindow(id, options = {}, queryParams = {}) {
@@ -258,11 +258,11 @@ export class WindowManager {
     return Array.from(this.windows.values());
   }
 
-  broadcast(channel, data, overlayOnly = false) {
+  broadcast(channel, data, overlayOnly = false, senderId = null) {
     this.windows.forEach((win, id) => {
       if (!win.isDestroyed()) {
         if (overlayOnly && !id.startsWith('overlay-')) return;
-        win.webContents.send(channel, data);
+        win.webContents.send(channel, data, senderId);
       }
     });
   }

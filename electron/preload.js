@@ -26,11 +26,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Settings & App State
   getSettings: () => ipcRenderer.invoke('get-settings'),
-  updateOverlaySetting: (id, settings) => ipcRenderer.send('update-overlay-setting', { id, settings }),
-  toggleOverlay: (id, state) => ipcRenderer.send('toggle-overlay', id, state),
+  updateOverlaySetting: (id, settings, senderId) => ipcRenderer.send('update-overlay-setting', { id, settings, senderId }),
+  toggleOverlay: (id, state, senderId) => ipcRenderer.send('toggle-overlay', id, state, senderId),
   
   onSettingsUpdated: (callback) => {
-    const handler = (_event, value) => callback(value);
+    const handler = (_event, value, senderId) => callback(value, senderId);
     ipcRenderer.on('settings-updated', handler);
     return () => ipcRenderer.removeListener('settings-updated', handler);
   }

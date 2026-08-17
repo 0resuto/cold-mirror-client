@@ -2,6 +2,10 @@ import { create } from 'zustand';
 
 let unsubSettings = null;
 
+// Determine our own identifier based on URL params to avoid self-echoes
+const urlParams = new URLSearchParams(window.location.search);
+const mySenderId = urlParams.get('id') || urlParams.get('window') || 'unknown';
+
 const debounceSettings = (() => {
   let timer = null;
   let pendingSettings = {};
@@ -11,7 +15,7 @@ const debounceSettings = (() => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       Object.entries(pendingSettings).forEach(([overlayId, settings]) => {
-        window.electronAPI.updateOverlaySetting(overlayId, settings);
+        window.electronAPI.updateOverlaySetting(overlayId, settings, mySenderId);
       });
       pendingSettings = {};
     }, 150);
@@ -30,7 +34,8 @@ export const useAppStore = create((set, get) => ({
 
     // Listen for changes from main process (e.g. window resize/move or toggles)
     if (unsubSettings) unsubSettings();
-    unsubSettings = window.electronAPI.onSettingsUpdated((newSettings) => {
+    unsubSettings = window.electronAPI.onSettingsUpdated((newSettings, msgSenderId) => {
+      if (msgSenderId === mySenderId) return; // Ignore our own echo to prevent race conditions
       set({ overlays: newSettings.overlays || {} });
     });
     return unsubSettings;
@@ -48,8 +53,23 @@ export const useAppStore = create((set, get) => ({
   }),
 
   toggleOverlay: (id, state) => {
+    // Optimistic update
+    set((prevState) => {
+      const current = prevState.overlays[id] || {};
+      const newState = state !== undefined ? state : !current.enabled;
+      return {
+        overlays: {
+          ...prevState.overlays,
+          [id]: {
+            ...current,
+            enabled: newState
+          }
+        }
+      };
+    });
+
     if (window.electronAPI) {
-      window.electronAPI.toggleOverlay(id, state);
+      window.electronAPI.toggleOverlay(id, state, mySenderId);
     }
   },
 
