@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "cold-mirror-widgets": "github:0resuto/cold-mirror-widgets#main",
+    "electron-log": "^5.4.4",
     "framer-motion": "^13.1.0",
     "irsdk-node": "^4.4.0",
     "lucide-react": "^0.460.0",

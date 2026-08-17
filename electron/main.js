@@ -3,13 +3,17 @@ import { WindowManager } from './windowManager.js';
 import { TelemetryService } from './services/telemetry.js';
 import { Store } from './services/store.js';
 import { widgetRegistry } from '../src/core/widgets/index.js';
+import log from 'electron-log/main.js';
+
+log.initialize();
+log.errorHandler.startCatching();
 
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  log.error('Uncaught Exception:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  log.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 let windowManager;

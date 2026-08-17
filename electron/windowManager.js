@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { widgetRegistry } from '../src/core/widgets/index.js';
+import log from 'electron-log/main.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,7 +35,7 @@ export class WindowManager {
       }
 
       if (senderId !== 'dashboard' && senderId !== windowId) {
-        console.warn(`Unauthorized window action: ${senderId} attempting to control ${windowId}`);
+        log.warn(`Unauthorized window action: ${senderId} attempting to control ${windowId}`);
         return;
       }
 
@@ -224,11 +225,12 @@ export class WindowManager {
   createOverlay(overlayId, savedSettings = {}) {
     const widgetDef = widgetRegistry.get(overlayId);
     if (!widgetDef) {
-      console.error(`Attempted to create unknown overlay: ${overlayId}`);
+      log.error(`Attempted to create unknown overlay: ${overlayId}`);
       return null;
     }
 
     const { dimensions } = widgetDef;
+
     const width = savedSettings.width || dimensions.defaultWidth;
     const height = savedSettings.height || dimensions.defaultHeight;
     const safeBounds = this.ensureVisibleBounds(savedSettings.x, savedSettings.y, width, height);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
+import log from 'electron-log/main.js';
 
 const WRITE_DEBOUNCE_MS = 300;
 
@@ -63,7 +64,7 @@ export class Store {
       await fs.promises.writeFile(tmpPath, json, 'utf-8');
       await fs.promises.rename(tmpPath, this.path);
     } catch (error) {
-      console.error('Failed to save config:', error);
+      log.error('Failed to save config:', error);
       // Clean up temp file on failure
       try { await fs.promises.unlink(tmpPath); } catch { /* ignore */ }
     } finally {

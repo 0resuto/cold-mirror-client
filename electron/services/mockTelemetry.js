@@ -1,4 +1,5 @@
 import { filterTelemetry } from './telemetry.js';
+import log from 'electron-log/main.js';
 
 export class MockTelemetryService {
   constructor(ipcSender) {
@@ -10,7 +11,7 @@ export class MockTelemetryService {
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    console.log("Mock Telemetry started");
+    log.info("Mock Telemetry started");
 
     const sessionData = {
       data: {

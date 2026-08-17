@@ -1,5 +1,6 @@
 import { IRacingSDK, CarLeftRight as IrsdkCarLeftRight } from 'irsdk-node';
 import { MockTelemetryService } from './mockTelemetry.js';
+import log from 'electron-log/main.js';
 
 function getSessionData(sessionInfo) {
   return sessionInfo?.data || sessionInfo || {};
@@ -162,13 +163,12 @@ export class TelemetryService {
     if (this.isRunning) return;
     this.isRunning = true;
     
-    // Check if sim is running
     const isRunning = await IRacingSDK.IsSimRunning();
     if (!isRunning) {
-        console.warn("iRacing is not running.");
+        log.warn("iRacing is not running.");
         // Fallback to mock in dev mode
         if (process.env.VITE_DEV_SERVER_URL) {
-            console.log("Starting Mock Telemetry as fallback...");
+            log.info("Starting Mock Telemetry as fallback...");
             this.mockService = new MockTelemetryService(this.ipcSender);
             this.mockService.start();
             return;
