@@ -56,7 +56,11 @@ function App() {
   }
 
   // Default to dashboard
-  return <Dashboard />;
+  return (
+    <React.StrictMode>
+      <Dashboard />
+    </React.StrictMode>
+  );
 }
 
 export default App;
