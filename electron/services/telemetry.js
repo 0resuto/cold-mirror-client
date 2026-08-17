@@ -1,22 +1,80 @@
 import { IRacingSDK } from 'irsdk-node';
 import { MockTelemetryService } from './mockTelemetry.js';
 
+function getSessionData(sessionInfo) {
+  return sessionInfo?.data || sessionInfo || {};
+}
+
+function normalizeSessionData(sessionInfo) {
+  const sessionData = getSessionData(sessionInfo);
+  const driverInfo = sessionData?.DriverInfo;
+  if (!driverInfo) return sessionData;
+  const driverCarIdx = Number(driverInfo.DriverCarIdx);
+
+  return {
+    ...sessionData,
+    DriverInfo: {
+      ...driverInfo,
+      DriverCarIdx: Number.isFinite(driverCarIdx) ? driverCarIdx : null,
+      Drivers: (driverInfo.Drivers || []).map((driver) => ({
+        ...driver,
+        CarIdx: Number.isFinite(Number(driver.CarIdx)) ? Number(driver.CarIdx) : null,
+      })),
+    },
+  };
+}
+
+function normalizeTelemetryValues(data) {
+  const rawValues = data?.values || data || {};
+  return Object.fromEntries(
+    Object.entries(rawValues).map(([key, value]) => [
+      key,
+      value && typeof value === 'object' && 'value' in value ? value.value : value,
+    ])
+  );
+}
+
 export function filterTelemetry(data, sessionInfo) {
-  const values = data?.values || data || {};
+  const values = normalizeTelemetryValues(data);
+  const sessionData = normalizeSessionData(sessionInfo);
+  const driverInfo = sessionData?.DriverInfo || {};
+  const drivers = driverInfo.Drivers || [];
+  const playerCarIdx = driverInfo.DriverCarIdx;
   const grid = {};
-  
-  const gridSize = values.CarIdxPosition?.length || 64;
+
+  const gridSize = Math.max(
+    values.CarIdxPosition?.length || 0,
+    values.CarIdxLapDistPct?.length || 0,
+    values.CarIdxTrackSurface?.length || 0,
+    values.CarIdxLap?.length || 0,
+    drivers.length,
+    64
+  );
+
   for (let i = 0; i < gridSize; i++) {
-    if (values.CarIdxPosition && values.CarIdxPosition[i] > 0) {
+    const position = values.CarIdxPosition?.[i] || 0;
+    const lapDistPct = values.CarIdxLapDistPct?.[i];
+    const lap = values.CarIdxLap?.[i];
+    const trackSurface = values.CarIdxTrackSurface?.[i];
+    const indexedDriver = drivers[i];
+    const driver = drivers.find((entry) => entry?.CarIdx === i) || (indexedDriver?.CarIdx == null ? indexedDriver : null);
+
+    const hasLiveCarData =
+      position > 0 ||
+      (Number.isFinite(lapDistPct) && lapDistPct >= 0) ||
+      (Number.isFinite(lap) && lap >= 0) ||
+      (Number.isFinite(trackSurface) && trackSurface > 0);
+
+    if (driver || hasLiveCarData) {
       grid[i] = {
-        Position: values.CarIdxPosition[i],
+        Position: position,
         ClassPosition: values.CarIdxClassPosition ? values.CarIdxClassPosition[i] : 0,
-        LapDistPct: values.CarIdxLapDistPct ? values.CarIdxLapDistPct[i] : 0,
-        Lap: values.CarIdxLap ? values.CarIdxLap[i] : 0,
+        LapDistPct: Number.isFinite(lapDistPct) ? lapDistPct : 0,
+        Lap: Number.isFinite(lap) ? lap : 0,
         LastLapTime: values.CarIdxLastLapTime ? values.CarIdxLastLapTime[i] : -1,
         BestLapTime: values.CarIdxBestLapTime ? values.CarIdxBestLapTime[i] : -1,
         F2Time: values.CarIdxF2Time ? values.CarIdxF2Time[i] : -1,
-        TrackSurface: values.CarIdxTrackSurface ? values.CarIdxTrackSurface[i] : 3,
+        TrackSurface: Number.isFinite(trackSurface) ? trackSurface : 0,
         OnPitRoad: values.CarIdxOnPitRoad ? values.CarIdxOnPitRoad[i] : false,
         HasDamage: values.CarIdxHasDamage ? values.CarIdxHasDamage[i] : false,
         IsFastestLap: values.CarIdxIsFastestLap ? values.CarIdxIsFastestLap[i] : false,
@@ -26,8 +84,8 @@ export function filterTelemetry(data, sessionInfo) {
 
   return {
     SessionTime: values.SessionTime,
-    player_name: sessionInfo?.data?.DriverInfo?.Drivers?.[sessionInfo?.data?.DriverInfo?.DriverCarIdx]?.UserName || '',
-    playerCarIdx: sessionInfo?.data?.DriverInfo?.DriverCarIdx,
+    player_name: drivers.find((entry) => entry?.CarIdx === playerCarIdx)?.UserName || drivers[playerCarIdx]?.UserName || '',
+    playerCarIdx,
     AirTemp: values.AirTemp || 0,
     TrackTemp: values.TrackTemp || 0,
     WindVel: values.WindVel || 0,
@@ -53,7 +111,7 @@ export function filterTelemetry(data, sessionInfo) {
 export class TelemetryService {
   constructor(ipcSender) {
     this.ipcSender = ipcSender;
-    this.iracing = new IRacingSDK();
+    this.iracing = new IRacingSDK({ autoEnableTelemetry: true });
     this.isRunning = false;
     this.mockService = null;
     this.latestSession = null;
@@ -84,8 +142,7 @@ export class TelemetryService {
         if (!this.isRunning) return;
         if (this.mockService) return; // Mock is running
         
-        // Use 0ms to prevent blocking the Node event loop
-        if (this.iracing.waitForData(0)) {
+        if (this.iracing.waitForData(16)) {
             const session = this.iracing.getSessionData();
             const telemetry = this.iracing.getTelemetry();
             
@@ -95,7 +152,7 @@ export class TelemetryService {
             
             const now = Date.now();
             if (session && (now - lastSessionSend > 1000)) {
-                this.ipcSender('session-info', { data: session });
+                this.ipcSender('session-info', { data: normalizeSessionData(session) });
                 lastSessionSend = now;
             }
             if (telemetry) {
