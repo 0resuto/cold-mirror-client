@@ -4,17 +4,9 @@ import { Minus, Square, X } from 'lucide-react';
 import { WidgetCard } from './WidgetCard';
 import appIcon from '../assets/app_icon.ico';
 
-const overlayConfigs = [
-  { id: 'standings', name: 'Live Standings', description: 'Real-time positions, gaps, and iRating.' },
-  { id: 'relative', name: 'Relative', description: 'Drivers immediately ahead and behind on track.' },
-  { id: 'fuel', name: 'Fuel Calculator', description: 'Live fuel usage and remaining laps.' },
-  { id: 'inputs', name: 'Input Trace', description: 'Steering wheel, pedals, gear and speed.' },
-  { id: 'radar', name: 'Proximity Radar', description: 'Visual indicator for cars in your blind spots.' },
-  { id: 'trackmap', name: 'Live Track Map', description: 'Linear track map showing all cars.' },
-  { id: 'weather', name: 'Weather', description: 'Air/track temp and wind direction.' },
-  { id: 'pit', name: 'Pit Helper', description: 'Pit speed limiter and service status.' },
-  { id: 'dash', name: 'Digital Dashboard', description: 'RPM, Gear, Speed, and Shift Lights.' },
-];
+import { widgetRegistry } from '../core/widgets/index.js';
+
+const overlayConfigs = widgetRegistry.getAll();
 
 export function Dashboard() {
   const settingsLoaded = useAppStore(state => state.settingsLoaded);

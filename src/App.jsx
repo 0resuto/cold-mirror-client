@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { LiveStandings, LiveRelative, LiveFuel, LiveInputs, LiveRadar, LinearTrackMap, LiveWeather, PitHelper, DigitalDash } from 'cold-mirror-widgets';
+import { componentRegistry } from './features/widgets/index.js';
 import 'cold-mirror-widgets/style.css';
 import { useLiveTelemetryIPC } from './features/live/useLiveTelemetryIPC';
 import { useAppStore } from './store/useAppStore';
@@ -13,17 +13,16 @@ function App() {
   const windowId = urlParams.get('id');
 
   const initSettings = useAppStore(state => state.initSettings);
+  const overlays = useAppStore(state => state.overlays);
+  const overlayId = (windowId || '').replace('overlay-', '');
+  
+  const isLocked = overlays[overlayId]?.clickThrough || false;
+  const columns = overlays[overlayId]?.columns;
+  const traceRange = overlays[overlayId]?.traceRange || 5;
 
   // Only initialize telemetry IPC for overlay windows, not the dashboard
   const isOverlay = windowType === 'overlay';
   useLiveTelemetryIPC(isOverlay);
-
-  // Fetch settings for the overlay
-  const overlayId = (windowId || '').replace('overlay-', '');
-  const settings = useAppStore(state => state.overlays[overlayId]) || {};
-  const isLocked = settings.clickThrough ?? false;
-  const columns = settings.columns;
-  const traceRange = settings.traceRange;
 
   useEffect(() => {
     let unsub;
@@ -43,29 +42,11 @@ function App() {
   }, [initSettings]);
 
   if (windowType === 'overlay') {
-    let content = null;
-    
-    if (overlayType === 'standings') {
-      content = <LiveStandings isLocked={isLocked} columns={columns} />;
-    } else if (overlayType === 'relative') {
-      content = <LiveRelative isLocked={isLocked} columns={columns} />;
-    } else if (overlayType === 'fuel') {
-      content = <LiveFuel isLocked={isLocked} />;
-    } else if (overlayType === 'inputs') {
-      content = <LiveInputs isLocked={isLocked} timeRange={traceRange} />;
-    } else if (overlayType === 'radar') {
-      content = <LiveRadar isLocked={isLocked} />;
-    } else if (overlayType === 'trackmap') {
-      content = <LinearTrackMap isLocked={isLocked} />;
-    } else if (overlayType === 'weather') {
-      content = <LiveWeather isLocked={isLocked} />;
-    } else if (overlayType === 'pit') {
-      content = <PitHelper isLocked={isLocked} />;
-    } else if (overlayType === 'dash') {
-      content = <DigitalDash isLocked={isLocked} />;
-    } else {
-      content = <div className="text-white p-4">Unknown overlay type</div>;
-    }
+    const content = componentRegistry.render(overlayType, {
+      isLocked,
+      columns,
+      timeRange: traceRange
+    });
 
     return (
       <OverlayContainer windowId={windowId}>

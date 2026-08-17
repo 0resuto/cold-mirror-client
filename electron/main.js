@@ -2,6 +2,7 @@ import { app, BrowserWindow, session } from 'electron';
 import { WindowManager } from './windowManager.js';
 import { TelemetryService } from './services/telemetry.js';
 import { Store } from './services/store.js';
+import { widgetRegistry } from '../src/core/widgets/index.js';
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
@@ -40,21 +41,23 @@ app.whenReady().then(() => {
     });
   });
 
+  // Replaces lines 43-57 with dynamic overlay defaults
+  const defaultOverlays = {};
+  for (const widget of widgetRegistry.getAll()) {
+    defaultOverlays[widget.id] = {
+      ...widget.defaultSettings,
+      width: widget.dimensions.defaultWidth,
+      height: widget.dimensions.defaultHeight,
+    };
+  }
+
   store = new Store({
     configName: 'user-preferences',
     defaults: {
-      overlays: {
-        standings: { 
-          enabled: false, 
-          x: 100, y: 100, width: 400, height: 600, clickThrough: false,
-          columns: { pos: true, num: true, driver: true, carName: false, carClass: true, classPos: true, srating: true, irating: true, gap: true, bestLap: false, lastLap: true, trackPct: false, laps: false }
-        },
-        relative: { enabled: false, x: 500, y: 100, width: 400, height: 600, clickThrough: false },
-        fuel: { enabled: false, x: 100, y: 750, width: 250, height: 150, clickThrough: false },
-        inputs: { enabled: false, x: 400, y: 750, width: 300, height: 150, clickThrough: false },
-      }
+      overlays: defaultOverlays
     }
   });
+
 
   windowManager = new WindowManager(store);
   

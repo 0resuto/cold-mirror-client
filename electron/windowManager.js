@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { widgetRegistry } from '../src/core/widgets/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -221,32 +222,22 @@ export class WindowManager {
   }
 
   createOverlay(overlayId, savedSettings = {}) {
-    const minWidths = {
-      'inputs': 300,
-      'radar': 100,
-      'trackmap': 400,
-      'weather': 420,
-      'pit': 380,
-      'dash': 400,
-    };
-    const minHeights = {
-      'inputs': 120,
-      'radar': 150,
-      'trackmap': 80,
-      'weather': 60,
-      'pit': 100,
-      'dash': 200,
-    };
+    const widgetDef = widgetRegistry.get(overlayId);
+    if (!widgetDef) {
+      console.error(`Attempted to create unknown overlay: ${overlayId}`);
+      return null;
+    }
 
-    const width = savedSettings.width || (overlayId === 'trackmap' ? 800 : overlayId === 'weather' ? 420 : overlayId === 'pit' ? 420 : overlayId === 'dash' ? 600 : 400);
-    const height = savedSettings.height || (overlayId === 'trackmap' ? 80 : overlayId === 'weather' ? 80 : overlayId === 'pit' ? 140 : overlayId === 'dash' ? 300 : 600);
+    const { dimensions } = widgetDef;
+    const width = savedSettings.width || dimensions.defaultWidth;
+    const height = savedSettings.height || dimensions.defaultHeight;
     const safeBounds = this.ensureVisibleBounds(savedSettings.x, savedSettings.y, width, height);
 
     const win = this.createWindow(`overlay-${overlayId}`, {
       width,
       height,
-      minWidth: minWidths[overlayId] || 150,
-      minHeight: minHeights[overlayId] || 150,
+      minWidth: dimensions.minWidth,
+      minHeight: dimensions.minHeight,
       x: safeBounds.x,
       y: safeBounds.y,
       frame: false,
