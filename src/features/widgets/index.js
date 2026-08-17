@@ -1,5 +1,5 @@
 import React from 'react';
-import { componentRegistry } from './RendererWidgetRegistry.js';
+import { componentRegistry } from './RendererWidgetRegistry.jsx';
 
 // Lazily load components to save memory per BrowserWindow
 componentRegistry.register('standings', React.lazy(() => import('cold-mirror-widgets').then(module => ({ default: module.LiveStandings }))));
