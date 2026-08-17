@@ -23,6 +23,7 @@ function App() {
   const settings = useAppStore(state => state.overlays[overlayId]) || {};
   const isLocked = settings.clickThrough ?? false;
   const columns = settings.columns;
+  const traceRange = settings.traceRange;
 
   useEffect(() => {
     let unsub;
@@ -42,7 +43,7 @@ function App() {
     } else if (overlayType === 'fuel') {
       content = <LiveFuel isLocked={isLocked} />;
     } else if (overlayType === 'inputs') {
-      content = <LiveInputs isLocked={isLocked} />;
+      content = <LiveInputs isLocked={isLocked} timeRange={traceRange} />;
     } else if (overlayType === 'radar') {
       content = <LiveRadar isLocked={isLocked} />;
     } else if (overlayType === 'trackmap') {

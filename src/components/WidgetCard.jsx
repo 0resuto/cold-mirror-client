@@ -24,7 +24,7 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
   const widgetOpacity = state.widgetOpacity ?? 1.0;
   const bgOpacity = state.bgOpacity ?? 0.6;
 
-  const renderSlider = (label, key, val, min, max) => (
+  const renderSlider = (label, key, val, min, max, formatter = (v) => Math.round(v * 100) + '%') => (
     <div className="flex items-center gap-3">
       <span className="text-[10px] whitespace-nowrap font-bold text-brand-10/60 uppercase w-28">{label}:</span>
       <input 
@@ -34,7 +34,7 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
         className="flex-1 max-w-[150px] min-w-[80px] h-1 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-brand-30 [&::-webkit-slider-thumb]:rounded-full"
         style={{ background: getSliderFill(val, min, max) }}
       />
-      <span className="text-[10px] font-mono text-brand-10/40 w-8 text-right">{Math.round(val * 100)}%</span>
+      <span className="text-[10px] font-mono text-brand-10/40 w-8 text-right">{formatter(val)}</span>
     </div>
   );
 
@@ -112,6 +112,7 @@ export function WidgetCard({ config, overlays, toggleOverlay, updateOverlaySetti
           {renderSlider('Scale', 'scale', scale, 0.5, 2.0)}
           {renderSlider('Widget Opacity', 'widgetOpacity', widgetOpacity, 0.0, 1.0)}
           {renderSlider('BG Opacity', 'bgOpacity', bgOpacity, 0.0, 1.0)}
+          {config.id === 'inputs' && renderSlider('Trace Range', 'traceRange', state.traceRange ?? 5.0, 5.0, 30.0, (v) => v.toFixed(1) + 's')}
           
           {(config.id === 'standings' || config.id === 'relative') && (() => {
             const defaultCols = config.id === 'standings' ? defaultStandingsColumns : defaultRelativeColumns;
