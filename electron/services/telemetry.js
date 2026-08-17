@@ -145,7 +145,10 @@ export function filterTelemetry(data, sessionInfo) {
     Speed: values.Speed || 0,
     PitSvFlags: values.PitSvFlags || 0,
     PitSvFuel: values.PitSvFuel || 0,
-    CarLeftRight: typeof values.CarLeftRight === 'string' ? (IrsdkCarLeftRight?.[values.CarLeftRight] || 0) : (values.CarLeftRight || 0),
+    CarLeftRight: (() => {
+      const raw = Array.isArray(values.CarLeftRight) ? values.CarLeftRight[0] : values.CarLeftRight;
+      return typeof raw === 'string' ? (IrsdkCarLeftRight?.[raw] || 0) : (raw || 0);
+    })(),
     grid
   };
 }
