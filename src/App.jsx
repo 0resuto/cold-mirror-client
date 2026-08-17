@@ -27,8 +27,17 @@ function App() {
 
   useEffect(() => {
     let unsub;
-    initSettings().then(res => { unsub = res; });
+    let mounted = true;
+    initSettings().then(res => {
+      if (mounted) {
+        unsub = res;
+      } else if (res) {
+        // Component already unmounted — clean up immediately
+        res();
+      }
+    });
     return () => {
+      mounted = false;
       if (unsub) unsub();
     };
   }, [initSettings]);
