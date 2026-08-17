@@ -10,9 +10,6 @@ const overlayConfigs = widgetRegistry.getAll();
 
 export function Dashboard() {
   const settingsLoaded = useAppStore(state => state.settingsLoaded);
-  const overlays = useAppStore(state => state.overlays);
-  const toggleOverlay = useAppStore(state => state.toggleOverlay);
-  const updateOverlaySetting = useAppStore(state => state.updateOverlaySetting);
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -69,9 +66,6 @@ export function Dashboard() {
             <WidgetCard 
               key={config.id} 
               config={config} 
-              overlays={overlays} 
-              toggleOverlay={toggleOverlay} 
-              updateOverlaySetting={updateOverlaySetting} 
             />
           ))}
         </div>
