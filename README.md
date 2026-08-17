@@ -19,15 +19,105 @@
 
 ## Overview
 
-Cold Mirror Client provides transparent, high-performance telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator. 
+Cold Mirror Client provides transparent, telemetry widgets (such as Live Standings, Relatives, and Fuel tracking) that overlay directly on top of the iRacing simulator. 
 
 It runs as a fully independent application, reading iRacing shared memory via `irsdk-node` without requiring an external backend or database.
 
 ## Architecture
 
-- **Main Process**: Node.js polling loop reading telemetry directly from simulator memory. Filters data to minimize IPC overhead.
-- **Renderer Process**: React/Vite application receiving lightweight telemetry updates. Uses Zustand for state management and TailwindCSS for styling.
-- **Communication**: Strict isolation via `contextBridge`. No Node integration in the Renderer.
+`cold-mirror-widgets` is an Electron app that reads live telemetry from the iRacing SDK in the main process and streams it to a dashboard window plus any number of overlay windows via IPC.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }}}%%
+flowchart LR
+    subgraph MAIN["🖥️ Main Process"]
+        direction TB
+        SDK(["iRacing SDK<br/>Shared Memory"])
+        TS["TelemetryService<br/><sub>telemetry.js</sub>"]
+        WM{{"WindowManager<br/><sub>windowManager.js</sub>"}}
+        ST[("Store<br/><sub>store.js · JSON</sub>")]
+
+        SDK -->|"poll @ ~30fps"| TS
+        TS --> WM
+        WM --> ST
+    end
+
+    PL{{"preload.js<br/><sub>contextBridge</sub>"}}
+
+    subgraph DASH["📊 Renderer · Dashboard"]
+        direction TB
+        DB["Dashboard.jsx"]
+        AS[["useAppStore<br/><sub>Zustand</sub>"]]
+        WC["WidgetCard.jsx"]
+
+        DB --> AS --> WC
+    end
+
+    subgraph OVERLAY["🪟 Renderer · Overlay N"]
+        direction TB
+        LT["useLiveTelemetryIPC"]
+        LS[["useLiveStore<br/><sub>Zustand</sub>"]]
+        TBR["TelemetryBridge"]
+        TP["TelemetryProvider<br/><sub>shared widgets package</sub>"]
+        W(["Widget Components<br/><sub>Speed, Fuel, …</sub>"])
+
+        LT --> LS --> TBR --> TP --> W
+    end
+
+    WM ==>|"broadcast telemetry & session"| PL
+    PL -.->|"settings update"| AS
+    PL -.->|"telemetry update"| LT
+    WC -->|"control actions"| PL
+    PL ==>|"ipc send"| WM
+
+    classDef core fill:#E3F2FD,stroke:#1565C0,stroke-width:1.5px,color:#0D47A1
+    classDef bridge fill:#FFF3E0,stroke:#E65100,stroke-width:1.5px,color:#E65100
+    classDef app fill:#E8F5E9,stroke:#2E7D32,stroke-width:1.5px,color:#1B5E20
+    classDef overlay fill:#F3E5F5,stroke:#6A1B9A,stroke-width:1.5px,color:#4A148C
+    classDef diskstore fill:#FCE4EC,stroke:#AD1457,stroke-width:1.5px,color:#880E4F
+    classDef memstore fill:#FFFDE7,stroke:#F9A825,stroke-width:1.5px,color:#F57F17
+
+    class SDK,TS,WM core
+    class PL bridge
+    class DB,WC app
+    class LT,TBR,TP,W overlay
+    class ST diskstore
+    class AS,LS memstore
+
+    style MAIN fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
+    style DASH fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
+    style OVERLAY fill:#FAFAFA,stroke:#90A4AE,stroke-width:1px
+```
+
+<sub>Legend</sub>
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '12px' }}}%%
+flowchart TB
+    A[" "] ==>|"Primary IPC channel"| B[" "]
+    C[" "] -.->|"Subscription callback"| D[" "]
+    E[" "] -->|"Direct call / data flow"| F[" "]
+    G[("On-disk store")]
+    H[["In-memory state · Zustand"]]
+
+    classDef diskstore fill:#FCE4EC,stroke:#AD1457,stroke-width:1.5px,color:#880E4F
+    classDef memstore fill:#FFFDE7,stroke:#F9A825,stroke-width:1.5px,color:#F57F17
+    class G diskstore
+    class H memstore
+
+    style A fill:none,stroke:none
+    style B fill:none,stroke:none
+    style C fill:none,stroke:none
+    style D fill:none,stroke:none
+    style E fill:none,stroke:none
+    style F fill:none,stroke:none
+```
+
+**Data flow, in short:**
+1. `TelemetryService` polls the iRacing shared-memory SDK and forwards frames to `WindowManager`.
+2. `WindowManager` broadcasts telemetry and session info to every renderer through `preload.js`'s `contextBridge`.
+3. The **Dashboard** renderer keeps settings/overlay state in `useAppStore` and sends control actions back through the same bridge.
+4. Each **Overlay** renderer consumes the live stream via `useLiveTelemetryIPC` → `useLiveStore` → `TelemetryBridge` → `TelemetryProvider`, which feeds the individual widget components.
 
 ## Getting Started
 
