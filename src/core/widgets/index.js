@@ -11,6 +11,8 @@ widgetRegistry.register(new WidgetDefinition({
   defaultSettings: {
     enabled: false,
     x: 100, y: 100, clickThrough: false,
+    groupByClass: false,
+    showClassName: false,
     columns: { pos: true, num: true, driver: true, carName: false, carClass: true, classPos: true, srating: true, irating: true, gap: true, bestLap: false, lastLap: true, trackPct: false, laps: false }
   }
 }));

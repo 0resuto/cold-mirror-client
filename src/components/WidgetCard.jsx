@@ -3,6 +3,7 @@ import { Power, Settings, ChevronDown, ChevronUp, Lock, Unlock } from 'lucide-re
 import { useAppStore } from '../store/useAppStore';
 import { SliderControl } from './SliderControl';
 import { ColumnToggles } from './ColumnToggles';
+import { Toggle } from './Toggle';
 
 export function WidgetCard({ config }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -114,6 +115,21 @@ export function WidgetCard({ config }) {
               onChange={(v) => updateOverlaySetting(config.id, { traceRange: v })} 
               formatter={(v) => v.toFixed(1) + 's'}
             />
+          )}
+          
+          {config.id === 'standings' && (
+            <>
+              <Toggle
+                label="Group by class"
+                checked={state.groupByClass}
+                onChange={(v) => updateOverlaySetting(config.id, { groupByClass: v })}
+              />
+              <Toggle
+                label="Class name"
+                checked={state.showClassName}
+                onChange={(v) => updateOverlaySetting(config.id, { showClassName: v })}
+              />
+            </>
           )}
           
           <ColumnToggles 

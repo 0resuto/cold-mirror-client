@@ -19,6 +19,8 @@ function App() {
   const isLocked = overlays[overlayId]?.clickThrough || false;
   const columns = overlays[overlayId]?.columns;
   const traceRange = overlays[overlayId]?.traceRange || 5;
+  const groupByClass = overlays[overlayId]?.groupByClass || false;
+  const showClassName = overlays[overlayId]?.showClassName || false;
 
   // Only initialize telemetry IPC for overlay windows, not the dashboard
   const isOverlay = windowType === 'overlay';
@@ -45,7 +47,9 @@ function App() {
     const content = componentRegistry.render(overlayType, {
       isLocked,
       columns,
-      timeRange: traceRange
+      timeRange: traceRange,
+      groupByClass,
+      showClassName
     });
 
     return (
