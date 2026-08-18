@@ -6,12 +6,31 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 
 const RED = '\x1b[31m';
 const CYAN = '\x1b[36m';
 const BOLD = '\x1b[1m';
 const RESET = '\x1b[0m';
+
+function find7z() {
+  try {
+    execSync('where 7z', { stdio: 'ignore' });
+    return '7z';
+  } catch {
+    // ignore
+  }
+
+  const vendorPaths = [
+    'node_modules/electron-winstaller/vendor/7z-x64.exe',
+    'node_modules/electron-winstaller/vendor/7z.exe',
+  ];
+  for (const p of vendorPaths) {
+    if (existsSync(p)) return `"${p}"`;
+  }
+
+  return null;
+}
 
 function fail(message) {
   console.error(`\n${BOLD}${RED}Build failed: ${message}${RESET}\n`);
@@ -56,8 +75,20 @@ try {
 
   const { version } = JSON.parse(readFileSync('package.json', 'utf-8'));
   const zipName = `cold-mirror-client-${version}-win.zip`;
-  console.log(`\n${CYAN}> Creating ${zipName}...${RESET}\n`);
-  execSync(`powershell -Command "Compress-Archive -Path 'release/win-unpacked/*' -DestinationPath 'release/${zipName}' -Force"`, { stdio: 'inherit' });
+  const zipPath = `release/${zipName}`;
+
+  if (existsSync(zipPath)) {
+    rmSync(zipPath, { force: true });
+  }
+
+  const sevenZip = find7z();
+  if (sevenZip) {
+    console.log(`\n${CYAN}> Creating ${zipName} using 7-Zip (max compression)...${RESET}\n`);
+    execSync(`${sevenZip} a -tzip -mx=9 -mmt=on "${zipPath}" "./release/win-unpacked/*"`, { stdio: 'inherit' });
+  } else {
+    console.log(`\n${CYAN}> Creating ${zipName} using PowerShell Compress-Archive...${RESET}\n`);
+    execSync(`powershell -Command "Compress-Archive -Path 'release/win-unpacked/*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'inherit' });
+  }
 
   console.log(`\n${BOLD}${CYAN}Build completed successfully.${RESET}\n`);
 } catch (error) {

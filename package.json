@@ -26,39 +26,48 @@
     "release": "release-it"
   },
   "dependencies": {
-    "cold-mirror-widgets": "github:0resuto/cold-mirror-widgets#main",
-    "electron-log": "^5.4.4",
-    "framer-motion": "^13.1.0",
-    "irsdk-node": "^4.4.0",
-    "lucide-react": "^0.460.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-hot-toast": "^2.4.1",
-    "zustand": "^4.4.7"
+    "irsdk-node": "^4.4.0"
   },
   "devDependencies": {
     "@release-it/conventional-changelog": "^11.0.1",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^4.2.1",
+    "cold-mirror-widgets": "github:0resuto/cold-mirror-widgets#main",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
+    "electron-log": "^5.4.4",
+    "framer-motion": "^13.1.0",
     "husky": "^9.1.7",
+    "lucide-react": "^0.460.0",
     "oxlint": "^0.6.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
     "release-it": "^19.2.4",
     "tailwindcss": "^4.0.0",
     "vite": "^6.0.0",
-    "vite-plugin-electron": "^0.28.0"
+    "vite-plugin-electron": "^0.28.0",
+    "zustand": "^4.4.7"
   },
   "build": {
     "appId": "com.coldmirror.client",
     "productName": "Cold Mirror",
     "artifactName": "${name}-${version}-${os}.${ext}",
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ],
     "directories": {
       "output": "release/"
     },
     "files": [
       "dist",
-      "dist-electron"
+      "dist-electron",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{o,h,hpp,cc,cpp,c,m,mm,lib,obj,iobj,ipdb,tlog,exp,vcxproj,vcxproj.filters}"
     ],
     "asarUnpack": [
       "**/*.node"
