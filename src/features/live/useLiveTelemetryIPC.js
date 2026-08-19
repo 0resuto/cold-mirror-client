@@ -34,6 +34,11 @@ export function useLiveTelemetryIPC(enabled = true) {
     });
 
     const unsubSession = window.electronAPI.onSessionInfo((sessionInfo) => {
+      if (!sessionInfo) {
+        setSessionData(null, [], null, null);
+        return;
+      }
+
       const rawSession = sessionInfo?.data || sessionInfo;
       const formattedSession = sessionInfo?.data ? sessionInfo : { data: sessionInfo };
 

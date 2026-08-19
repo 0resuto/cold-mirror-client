@@ -158,6 +158,7 @@ export class TelemetryService {
     this.ipcSender = ipcSender;
     this.iracing = new IRacingSDK({ autoEnableTelemetry: true });
     this.isRunning = false;
+    this.isConnected = false;
     this.mockService = null;
     this.latestSession = null;
   }
@@ -181,27 +182,54 @@ export class TelemetryService {
     this.iracing.startSDK();
     
     let lastSessionSend = 0;
+    let lastDataReceived = 0;
+    let lastReconnectAttempt = 0;
 
     const loop = () => {
         if (!this.isRunning) return;
         if (this.mockService) return; // Mock is running
         
-        if (this.iracing.waitForData(0)) {
-            const session = this.iracing.getSessionData();
+        const now = Date.now();
+        const hasData = this.iracing.waitForData(0);
+
+        if (hasData) {
             const telemetry = this.iracing.getTelemetry();
-            
-            if (session) {
-                this.latestSession = session;
-            }
-            
-            const now = Date.now();
-            if (session && (now - lastSessionSend > 1000)) {
-                this.ipcSender('session-info', { data: normalizeSessionData(session) });
-                lastSessionSend = now;
-            }
             if (telemetry) {
+                lastDataReceived = now;
+                if (!this.isConnected) {
+                    this.isConnected = true;
+                    log.info("iRacing telemetry stream connected.");
+                }
+
+                const session = this.iracing.getSessionData();
+                if (session) {
+                    this.latestSession = session;
+                }
+                
+                if (session && (now - lastSessionSend > 1000)) {
+                    this.ipcSender('session-info', { data: normalizeSessionData(session) });
+                    lastSessionSend = now;
+                }
+
                 const payload = filterTelemetry(telemetry, this.latestSession);
                 this.ipcSender('telemetry-update', payload);
+            }
+        } else {
+            // If we were connected and haven't received telemetry data for > 1.5 seconds, consider disconnected
+            if (this.isConnected && (now - lastDataReceived > 1500)) {
+                this.isConnected = false;
+                this.latestSession = null;
+                log.info("iRacing session ended / disconnected. Clearing telemetry state.");
+                this.ipcSender('telemetry-update', null);
+                this.ipcSender('session-info', null);
+            }
+
+            // Periodically attempt to ensure SDK is started when not connected
+            if (!this.isConnected && (now - lastReconnectAttempt > 2000)) {
+                lastReconnectAttempt = now;
+                if (!this.iracing.sessionStatusOK) {
+                    this.iracing.startSDK();
+                }
             }
         }
         
@@ -214,6 +242,8 @@ export class TelemetryService {
 
   stop() {
     this.isRunning = false;
+    this.isConnected = false;
+    this.latestSession = null;
     if (this.mockService) {
       this.mockService.stop();
       this.mockService = null;
