@@ -68,10 +68,16 @@ const ResizeHandle = React.memo(function ResizeHandle({ windowId }) {
 const TelemetryBridge = React.memo(({ children }) => {
   const latestTelemetry = useLiveStore(state => state.latestTelemetry);
   const sessionDrivers = useLiveStore(state => state.sessionDrivers);
+  const sessionData = useLiveStore(state => state.sessionData);
   const trackLength = useLiveStore(state => state.trackLength);
 
   return (
-    <TelemetryProvider telemetry={latestTelemetry} sessionDrivers={sessionDrivers} trackLength={trackLength}>
+    <TelemetryProvider 
+      telemetry={latestTelemetry} 
+      sessionDrivers={sessionDrivers} 
+      sessionData={sessionData} 
+      trackLength={trackLength}
+    >
       {children}
     </TelemetryProvider>
   );

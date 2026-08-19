@@ -16,7 +16,8 @@ export class MockTelemetryService {
     const sessionData = {
       data: {
         WeekendInfo: {
-          TrackLength: "4.00 km"
+          TrackLength: "4.00 km",
+          TrackPitSpeedLimit: "60.00 kph"
         },
         DriverInfo: {
           DriverCarIdx: 1,
@@ -44,14 +45,28 @@ export class MockTelemetryService {
         this.ipcSender('session-info', sessionData);
       }
 
-      // Generate some fake moving data
-      const throttle = Math.max(0, Math.sin(this.sessionTime * 2));
-      const brake = Math.max(0, -Math.sin(this.sessionTime * 2));
+      const isPlayerOnPit = (this.sessionTime % 20) < 10; // On pit road for 10s every 20s
       const steering = Math.sin(this.sessionTime) * 1.5; // rad
-      const gear = Math.floor(Math.abs(Math.sin(this.sessionTime * 0.5) * 6)) + 1;
-      const rpm = 3000 + (throttle * 4000);
-      const speed = gear * 30 + (throttle * 20); // roughly km/h
       const fuelLevel = Math.max(0, 50 - (this.sessionTime * 0.05));
+
+      let throttle, brake, gear, rpm, speedKph;
+      if (isPlayerOnPit) {
+        // Pit road: limiter engaged around 60 km/h limit
+        gear = 2;
+        throttle = 0.35 + Math.sin(this.sessionTime * 3) * 0.05;
+        brake = 0;
+        rpm = 4200 + Math.sin(this.sessionTime * 3) * 150;
+        speedKph = 59.6 + Math.sin(this.sessionTime * 1.5) * 1.6; // 58.0 - 61.2 km/h
+      } else {
+        // On track: driving simulation
+        throttle = Math.max(0, Math.sin(this.sessionTime * 1.2));
+        brake = Math.max(0, -Math.sin(this.sessionTime * 1.2));
+        gear = Math.floor(Math.abs(Math.sin(this.sessionTime * 0.3) * 4)) + 3;
+        rpm = 4000 + (throttle * 3500);
+        speedKph = 110 + (gear * 25) + (throttle * 40);
+      }
+
+      const speed = speedKph / 3.6; // iRacing SDK telemetry Speed is in m/s
 
           const playerDist = (this.sessionTime * 0.010) % 1;
           
@@ -84,8 +99,6 @@ export class MockTelemetryService {
           const windVel = 2.5 + Math.sin(this.sessionTime * 0.1) * 1.0;
           const windDir = (this.sessionTime * 0.05) % (Math.PI * 2); // Rotating wind for testing
           const yaw = (this.sessionTime * 0.3) % (Math.PI * 2); // Simulate car turning around the track
-
-          const isPlayerOnPit = (this.sessionTime % 15) < 7.5; // On pit road 50% of the time for testing
           // Simulate some pit service flags (1+2+4+8 = 15 for 4 tires, +16 = 31 for fuel)
           const pitSvFlags = 31;
           const pitSvFuel = 25.5;

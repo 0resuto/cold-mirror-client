@@ -19,7 +19,7 @@ function normalizeCarIdx(value) {
 
 export function useLiveTelemetryIPC(enabled = true) {
   const setLatestTelemetry = useLiveStore((state) => state.setLatestTelemetry);
-  const setSessionDrivers = useLiveStore((state) => state.setSessionDrivers);
+  const setSessionData = useLiveStore((state) => state.setSessionData);
 
   useEffect(() => {
     if (!enabled) return;
@@ -34,16 +34,20 @@ export function useLiveTelemetryIPC(enabled = true) {
     });
 
     const unsubSession = window.electronAPI.onSessionInfo((sessionInfo) => {
-      const sessionData = sessionInfo?.data || sessionInfo;
+      const rawSession = sessionInfo?.data || sessionInfo;
+      const formattedSession = sessionInfo?.data ? sessionInfo : { data: sessionInfo };
 
-      if (sessionData?.DriverInfo?.Drivers) {
-         const drivers = sessionData.DriverInfo.Drivers.map((driver) => ({
+      if (rawSession?.DriverInfo?.Drivers) {
+         const drivers = rawSession.DriverInfo.Drivers.map((driver) => ({
            ...driver,
            CarIdx: normalizeCarIdx(driver.CarIdx),
          }));
-         const driverCarIdx = normalizeCarIdx(sessionData.DriverInfo.DriverCarIdx);
-         const trackLength = normalizeTrackLength(sessionData.WeekendInfo?.TrackLength);
-         setSessionDrivers(drivers, driverCarIdx, trackLength);
+         const driverCarIdx = normalizeCarIdx(rawSession.DriverInfo.DriverCarIdx);
+         const trackLength = normalizeTrackLength(rawSession.WeekendInfo?.TrackLength);
+         setSessionData(formattedSession, drivers, driverCarIdx, trackLength);
+      } else if (rawSession) {
+         const trackLength = normalizeTrackLength(rawSession.WeekendInfo?.TrackLength);
+         setSessionData(formattedSession, [], null, trackLength);
       }
     });
 
@@ -51,7 +55,7 @@ export function useLiveTelemetryIPC(enabled = true) {
       if (unsubTelemetry) unsubTelemetry();
       if (unsubSession) unsubSession();
     };
-  }, [enabled, setLatestTelemetry, setSessionDrivers]);
+  }, [enabled, setLatestTelemetry, setSessionData]);
 
   return;
 }
