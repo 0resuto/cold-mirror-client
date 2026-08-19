@@ -84,7 +84,7 @@ export class WindowManager {
       // If clickThrough was changed and window is open, update it
       const win = this.windows.get(`overlay-${id}`);
       if (win && settings.clickThrough !== undefined) {
-        win.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
+        win.setIgnoreMouseEvents(Boolean(settings.clickThrough));
       }
       
       // Broadcast settings update to all windows so Dashboard updates UI
@@ -250,7 +250,7 @@ export class WindowManager {
     }, { window: 'overlay', type: overlayId, id: `overlay-${overlayId}` });
     
     if (savedSettings.clickThrough) {
-      win.setIgnoreMouseEvents(true, { forward: true });
+      win.setIgnoreMouseEvents(true);
     }
     
     return win;

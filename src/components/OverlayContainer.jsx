@@ -48,7 +48,7 @@ const ResizeHandle = React.memo(function ResizeHandle({ windowId }) {
 
   return (
     <div 
-      className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-50 flex items-end justify-end p-1 opacity-50 hover:opacity-100 transition-opacity"
+      className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-50 flex items-end justify-end p-1 opacity-50 hover:opacity-100 transition-opacity pointer-events-auto"
       onMouseDown={(e) => {
         startPos.current = {
           x: e.screenX,
@@ -93,8 +93,8 @@ export function OverlayContainer({ windowId, children }) {
 
   return (
     <div 
-      className={`w-full h-screen overflow-hidden relative transition-colors duration-300 ${
-        !isLocked ? 'bg-black/40 border border-white/10 backdrop-blur-sm' : ''
+      className={`w-full h-screen overflow-hidden relative transition-colors duration-300 select-none ${
+        !isLocked ? 'bg-black/40 border border-white/10 backdrop-blur-sm' : 'pointer-events-none'
       }`}
       style={{ 
         WebkitAppRegion: isLocked ? 'no-drag' : 'drag', 
@@ -103,7 +103,7 @@ export function OverlayContainer({ windowId, children }) {
         ...(inactiveOpacity !== undefined && { '--inactive-opacity': inactiveOpacity })
       }}
     >
-      <div className="w-full h-full relative flex flex-col items-start justify-start" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+      <div className="w-full h-full relative flex flex-col items-start justify-start pointer-events-none select-none" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         <ErrorBoundary>
           <TelemetryBridge>
             {children}
